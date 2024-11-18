@@ -340,6 +340,8 @@ if __name__ == "__main__":
     else:
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
     st_model = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=2).to(args.device)
+    if args.use_data_parallel:
+        model, local_model, st_model = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model)
     model_list = [model, local_model, st_model]
     total_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list)
     print(f'Total number of parameters: {total_params}')
@@ -361,7 +363,7 @@ if __name__ == "__main__":
 
         # load checkpoint
         if args.cp_load_path != "no":
-            load_checkpoint(model_list, None, None, filename=args.cp_load_path)
+            load_checkpoint(model_list, None, None, filename=args.cp_load_path, use_data_parallel=args.use_data_parallel)
             for param in st_model.parameters():
                 param.requires_grad = False
 

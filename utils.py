@@ -631,18 +631,22 @@ def projection_fun(V, H):
 
 
 def save_checkpoint(model, optimizer, scheduler, filename="checkpoint.pth"):
+    """
+    Save the model, optimizer, and scheduler state dictionaries to a checkpoint file.
+    Handles single models or lists of models, with support for DataParallel.
+    """
     # Check if model is a list
     if isinstance(model, list):
         # Save state dicts for each model in the list
-        model_state_dicts = [m.state_dict() for m in model]
+        model_state_dicts = [m.module.state_dict() if isinstance(m, torch.nn.DataParallel) else m.state_dict() for m in model]
     else:
-        # Save state dict for a single model
-        model_state_dicts = model.state_dict()
+        # Save state dict for a single model, handle DataParallel
+        model_state_dicts = model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict()
 
     # Create the checkpoint dictionary
     checkpoint = {
         "model_state_dict": model_state_dicts,
-        "optimizer_state_dict": optimizer.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict() if optimizer else None,
         "scheduler_state_dict": scheduler.state_dict() if scheduler else None
     }
 
@@ -651,32 +655,47 @@ def save_checkpoint(model, optimizer, scheduler, filename="checkpoint.pth"):
     print(f"Checkpoint saved to {filename}")
 
 
-def load_checkpoint(model, optimizer, scheduler, filename="checkpoint.pth"):
+def load_checkpoint(model, optimizer=None, scheduler=None, filename="checkpoint.pth", use_data_parallel=False):
+    """
+    Load the model, optimizer, and scheduler state dictionaries from a checkpoint file.
+    Handles single models or lists of models, with support for DataParallel.
+    """
     if not os.path.exists(filename):
         print(f"Checkpoint file {filename} does not exist.")
         return model, optimizer, scheduler
 
     # Load the checkpoint
-    checkpoint = torch.load(filename, weights_only=True)
+    checkpoint = torch.load(filename)
 
     # Check if model is a list and load the state dicts accordingly
     if isinstance(model, list):
         # Ensure the model list length matches the state dicts list length
         if len(model) != len(checkpoint["model_state_dict"]):
             raise ValueError("The number of models in the checkpoint does not match the number of provided models.")
-        # Load each model's state dict
+
         for i, m in enumerate(model):
-            m.load_state_dict(checkpoint["model_state_dict"][i])
+            state_dict = checkpoint["model_state_dict"][i]
+            # Handle DataParallel
+            if use_data_parallel:
+                state_dict = {"module." + k if not k.startswith("module.") else k: v for k, v in state_dict.items()}
+            else:
+                state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+            m.load_state_dict(state_dict)
     else:
-        # Load state dict for a single model
-        model.load_state_dict(checkpoint["model_state_dict"])
+        # Handle single model
+        state_dict = checkpoint["model_state_dict"]
+        if use_data_parallel:
+            state_dict = {"module." + k if not k.startswith("module.") else k: v for k, v in state_dict.items()}
+        else:
+            state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+        model.load_state_dict(state_dict)
 
     # Load optimizer state dict if provided
-    if optimizer and checkpoint["optimizer_state_dict"]:
+    if optimizer and checkpoint.get("optimizer_state_dict"):
         optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 
     # Load scheduler state dict if provided
-    if scheduler and checkpoint["scheduler_state_dict"]:
+    if scheduler and checkpoint.get("scheduler_state_dict"):
         scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 
     print(f"Checkpoint loaded from {filename}")

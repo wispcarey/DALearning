@@ -128,9 +128,6 @@ def get_parameters():
     # args.lr_decay_epochs = list([])
     # for it in iterations:
     #     args.lr_decay_epochs.append(int(it))
-    
-    if args.print_batch == "auto":
-        args.print_batch = math.ceil(args.train_traj_num / args.batch_size)
 
     if not args.warm_up:
         args.warm_up_rate = 1
@@ -158,6 +155,20 @@ def get_parameters():
     args.ori_dim = DATASET_INFO[args.dataset]['dim']
     args.obs_dim = DATASET_INFO[args.dataset]['obs_dim']
     args.obs_inds = DATASET_INFO[args.dataset]['obs_inds']
+    
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
+    print(f"Detected {torch.cuda.device_count()} GPUs")
+    if num_gpus > 1:
+        args.use_data_parallel = True
+        args.batch_size = args.batch_size * num_gpus
+        print(f"Use DataParallel. Adjusted Batch Size: {args.batch_size}")
+    else:
+        args.use_data_parallel = False
+        print(f"Do not Use DataParallel")
+    
+    if args.print_batch == "auto":
+        args.print_batch = math.ceil(args.train_traj_num / args.batch_size)
+    
 
     return args
