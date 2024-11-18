@@ -25,4 +25,4 @@
 cd ../script  # Assuming `script` folder is one level up from `slurm_script`
 
 # Run your program
-bash v2_run_fine_tuning.sh
+bash v2_run_enscorrection_train.sh
