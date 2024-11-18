@@ -6,7 +6,6 @@
 #SBATCH --nodes=1           # number of nodes (1 node)
 #SBATCH --gres=gpu:v100:2   # 2 V100 GPUs with 16GB memory each
 #SBATCH --partition=gpu     # use GPU partition
-#SBATCH --constraint="v100" # ensure 16GB V100 GPUs
 #SBATCH --ntasks=2          # 2 tasks (1 task per GPU)
 #SBATCH -J "bohan-gpu-test-LearnKalmanGain"   # job name
 #SBATCH --mail-user=bhchen@caltech.edu # email address
