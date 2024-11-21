@@ -558,14 +558,14 @@ def get_dataloader(args, x0=None, test_only=False):
     if not test_only:
         train_data = ChunkedTimeseries(true_v, args.train_steps, args.overlap_rate)
         train_loader = DataLoader(train_data, batch_size=args.batch_size,
-                                shuffle=True, num_workers=2, collate_fn=TimeStack())
+                                shuffle=True, num_workers=args.num_loader_workers, collate_fn=TimeStack())
         print("Train loader length:", len(train_loader))
 
 
     # test data
     test_data = ChunkedTimeseries(true_v_test, args.test_steps, 0)
-    test_loader = DataLoader(test_data, batch_size=len(test_data),
-                             shuffle=False, num_workers=2, collate_fn=TimeStack())
+    test_loader = DataLoader(test_data, batch_size=args.test_batch_size,
+                             shuffle=False, num_workers=args.num_loader_workers, collate_fn=TimeStack())
 
     print("Dataloader generated.")
 
@@ -665,7 +665,7 @@ def load_checkpoint(model, optimizer=None, scheduler=None, filename="checkpoint.
         return model, optimizer, scheduler
 
     # Load the checkpoint
-    checkpoint = torch.load(filename)
+    checkpoint = torch.load(filename, weights_only=True)
 
     # Check if model is a list and load the state dicts accordingly
     if isinstance(model, list):

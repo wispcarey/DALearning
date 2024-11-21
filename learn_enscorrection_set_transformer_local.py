@@ -120,7 +120,7 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
             
             # ens_v_a = post_process(ens_v_a, infl=1.06)
             
-            ens_v_a = torch.clamp(ens_v_a, min=-20, max=20)
+            ens_v_a = torch.clamp(ens_v_a, min=-args.clamp, max=args.clamp)
 
             ens_list.append(ens_v_a)
             
@@ -276,7 +276,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                 
                 ens_v_a = post_process(ens_v_a, infl=infl)
                 
-                ens_v_a = torch.clamp(ens_v_a, min=-20, max=20)
+                ens_v_a = torch.clamp(ens_v_a, min=-args.clamp, max=args.clamp)
 
                 ens_list.append(ens_v_a)
                 K_list.append(K)
@@ -330,7 +330,8 @@ if __name__ == "__main__":
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
     st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
     st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-    model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
+    if args.use_data_parallel:
+        model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
     model_list = [model, local_model, st_model1, st_model2]
     total_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list)
     print(f'Total number of parameters: {total_params}')
@@ -353,7 +354,7 @@ if __name__ == "__main__":
 
     # load checkpoint
     if args.cp_load_path != "no":
-        load_checkpoint(model_list, None, None, filename=args.cp_load_path)
+        load_checkpoint(model_list, None, None, filename=args.cp_load_path, use_data_parallel=args.use_data_parallel)
         # for param in st_model1.parameters():
         #     param.requires_grad = False
         # for param in st_model2.parameters():

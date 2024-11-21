@@ -115,7 +115,7 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
             
             # ens_v_a = post_process(ens_v_a, infl=1.06)
             
-            ens_v_a = torch.clamp(ens_v_a, min=-20, max=20)
+            ens_v_a = torch.clamp(ens_v_a, min=-args.clamp, max=args.clamp)
 
             ens_list.append(ens_v_a)
             
@@ -275,7 +275,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                 
                 ens_v_a = post_process(ens_v_a, infl=infl)
                 
-                ens_v_a = torch.clamp(ens_v_a, min=-20, max=20)
+                ens_v_a = torch.clamp(ens_v_a, min=-args.clamp, max=args.clamp)
 
                 ens_list.append(ens_v_a)
                 K_list.append(K)

@@ -35,11 +35,13 @@ def get_parameters():
     # dataset setting
     parser.add_argument('--dataset', type=str, default='lorenz96', choices=['lorenz63', 'lorenz96', 'ks'],
                         help='Dataset name')
+    parser.add_argument('--num_loader_workers', type=int, default=16,
+                        help='number of workers for the data loader')
     parser.add_argument('--N', type=int, default=20,
                         help='Number of ensemble sample')
-    parser.add_argument('--train_steps', type=int, default=50,
+    parser.add_argument('--train_steps', type=int_or_default, default="default",
                         help='Training time steps')
-    parser.add_argument('--train_traj_num', type=int, default=4096,
+    parser.add_argument('--train_traj_num', type=int_or_default, default="default",
                         help='Number of training trajectories')
     parser.add_argument('--test_steps', type=int_or_default, default="default",
                         help='Testing time steps')
@@ -75,8 +77,10 @@ def get_parameters():
                         help='training epochs')
     parser.add_argument('--hidden_dim', type=int_or_default, default="default",
                         help='Hidden dimension of the NN')
-    parser.add_argument('--batch_size', type=int, default=512,
-                        help='training epochs')
+    parser.add_argument('--batch_size', type=int_or_default, default="default",
+                        help='training batch size')
+    parser.add_argument('--test_batch_size', type=int_or_default, default="default",
+                        help='test batch size')
     parser.add_argument('--detach_training_epoch', type=int, default=10000,
                         help='detach training epochs')
     parser.add_argument('--loss_type', type=str, default="normalized_l2", choices=["l2", "normalized_l2", "rmse"],
@@ -96,7 +100,7 @@ def get_parameters():
                         help='trail name')
 
     # optimization setting
-    parser.add_argument('--learning_rate', type=float, default=5e-4,
+    parser.add_argument('--learning_rate', type=float_or_default, default='default',
                         help='learning rate')
     parser.add_argument('--lr_decay_epochs', type=str, default='200,300,400',
                         help='where to decay lr, can be a list')
@@ -149,12 +153,28 @@ def get_parameters():
     if args.test_traj_num == 'default':
         args.test_traj_num = DATASET_INFO[args.dataset]['test_traj_num']
     
+    if args.train_steps == 'default':
+        args.train_steps = DATASET_INFO[args.dataset]['train_steps']
+    
+    if args.train_traj_num == 'default':
+        args.train_traj_num = DATASET_INFO[args.dataset]['train_traj_num']
+    
     if args.hidden_dim == 'default':
         args.hidden_dim = DATASET_INFO[args.dataset]['hidden_dim']
+    
+    if args.learning_rate == 'default':
+        args.learning_rate = DATASET_INFO[args.dataset]['learning_rate']
+    
+    if args.batch_size == 'default':
+        args.batch_size = DATASET_INFO[args.dataset]['batch_size']
+        
+    if args.test_batch_size == 'default':
+        args.test_batch_size = args.test_traj_num
     
     args.ori_dim = DATASET_INFO[args.dataset]['dim']
     args.obs_dim = DATASET_INFO[args.dataset]['obs_dim']
     args.obs_inds = DATASET_INFO[args.dataset]['obs_inds']
+    args.clamp = DATASET_INFO[args.dataset]['clamp']
     
     args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
