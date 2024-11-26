@@ -87,18 +87,18 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
             # for the ensemble dataset and observations
             mean_hv = torch.mean(hv, dim=1, keepdim=True).expand(-1, N, -1)
             mean_ens_v_f = torch.mean(ens_v_f, dim=1, keepdim=True).expand(-1, N, -1)
-            # Cvv = batch_covariance(ens_v_f).view(-1, 1, D ** 2).expand(-1, N, -1)
-            # Cvy = batch_covariance(ens_v_f, hv).view(-1, 1, D * d).expand(-1, N, -1)
-            # Cyy = batch_covariance(hv) + args.sigma_y * torch.eye(d).unsqueeze(0).expand(B, -1, -1).to(args.device)
-            # Cyy = Cyy.view(-1, 1, d ** 2).expand(-1, N, -1)
-            # ensemble_info = torch.cat([mean_ens_v_f, mean_hv, Cvv, Cvy, Cyy], dim=-1)
             ens_nn_output = st_model1(ens_v_f)
-            ens_o_nn_output = st_model2(hv)
             
-            # nn_inputs
-            nn_input = torch.cat([ens_v_f, hv, ens_i, 
-                                  ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
-            local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
+            # nn inputs
+            if args.obs_distribution:
+                ens_o_nn_output = st_model2(hv)                
+                nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                    ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
+            else:
+                nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                    ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
 
             # execute model
             nn_output = model(nn_input).view(hv.shape[0], hv.shape[1], -1)
@@ -253,10 +253,16 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                 ens_nn_output = st_model1(ens_v_f)
                 ens_o_nn_output = st_model2(hv)
                 
-                # nn_inputs
-                nn_input = torch.cat([ens_v_f, hv, ens_i, 
-                                    ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
-                local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
+                # nn inputs
+                if args.obs_distribution:
+                    ens_o_nn_output = st_model2(hv)                
+                    nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                        ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                    local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
+                else:
+                    nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                        ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                    local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
 
                 # execute model
                 nn_output = model(nn_input).view(hv.shape[0], hv.shape[1], -1)
@@ -309,8 +315,14 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
 if __name__ == "__main__":
     args = get_parameters()
     
-    args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
-    args.local_input_dim = args.obs_dim + args.st_output_dim * 2 
+    if args.obs_distribution:
+        print("Apply STs on the ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.obs_dim + args.st_output_dim * 2
+    else: 
+        print("Only apply an ST on the ensemble state data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim
+        args.local_input_dim = args.obs_dim + args.st_output_dim
 
     if args.cp_load_path != "no":
         suffix = "_tuned"
@@ -347,7 +359,10 @@ if __name__ == "__main__":
     else:
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
     st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-    st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
+    if args.obs_distribution:
+        st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
+    else:
+        st_model2 = NaiveNetwork(1)
     if args.use_data_parallel:
         model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
     model_list = [model, local_model, st_model1, st_model2]

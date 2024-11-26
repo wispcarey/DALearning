@@ -89,6 +89,8 @@ def get_parameters():
                         help='do not apply localization')
     parser.add_argument('--st_output_dim', type=int, default=64,
                         help='dimension of set transformer output')
+    parser.add_argument('--obs_distribution', action='store_true',
+                        help='apply set transformer on the observation distribution (not necessary for linear observation)')
     
 
     # output setting

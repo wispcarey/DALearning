@@ -40,7 +40,7 @@ def test_model(loader, model_list, args, infl=1, H_info=None):
     # loc_mat_yy = dist2coeff(args.Lyy, radius=4).unsqueeze(0)
 
     with torch.no_grad():
-        for batch_v in loader:
+        for batch_ind, batch_v in enumerate(loader):
             batch_v = batch_v.to(device=args.device)
 
             # Sample from prior
@@ -90,11 +90,16 @@ def test_model(loader, model_list, args, infl=1, H_info=None):
                 ens_nn_output = st_model1(ens_v_f)
                 ens_o_nn_output = st_model2(hv)
                 
-                # nn_inputs
-                nn_input = torch.cat([ens_v_f, hv, ens_i, 
-                                    ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
-                local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
-
+                if args.obs_distribution:
+                    ens_o_nn_output = st_model2(hv)                
+                    nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                        ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                    local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
+                else:
+                    nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                        ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                    local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
+                    
                 # execute model
                 nn_output = model(nn_input).view(hv.shape[0], hv.shape[1], -1)
                 Vnn1 = ens_v_f + nn_output[:, :, :D]
@@ -136,8 +141,18 @@ def test_model(loader, model_list, args, infl=1, H_info=None):
             # Loss functions
             rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2))
             rmv_tensor = torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3)))
+            
+            if batch_ind == 0:
+                rmse_tensor_all, rmv_tensor_all = rmse_tensor, rmv_tensor
+            else:
+                # Concatenate tensors along the first dimension
+                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor), dim=0)
+                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor), dim=0)
+            
+        mean_rmse, std_rmse = get_mean_std(torch.mean(rmse_tensor_all,dim=0))
+        mean_rmv, std_rmv = get_mean_std(torch.mean(rmv_tensor_all,dim=0))
 
-        return rmse_tensor, rmv_tensor, K_tensor, loc_tensor
+    return mean_rmse, std_rmse, mean_rmv, std_rmv
 
 
 def test_SequentialEnKF(loader, args, infl=1, H_info=None, localization=False):
@@ -165,7 +180,7 @@ def test_SequentialEnKF(loader, args, infl=1, H_info=None, localization=False):
         Lyy = dist2coeff(args.Lyy, radius=4)
 
     with torch.no_grad():
-        for batch_v in loader:
+        for batch_ind, batch_v in enumerate(loader):
             batch_v = batch_v.to(device=args.device)
 
             # Sample from prior
@@ -215,14 +230,30 @@ def test_SequentialEnKF(loader, args, infl=1, H_info=None, localization=False):
             # Loss functions
             rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2))
             rmv_tensor = torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3)))
-
-        return rmse_tensor, rmv_tensor, K_tensor, loc_tensor
+        
+            if batch_ind == 0:
+                rmse_tensor_all, rmv_tensor_all = rmse_tensor, rmv_tensor
+            else:
+                # Concatenate tensors along the first dimension
+                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor), dim=0)
+                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor), dim=0)
+            
+        mean_rmse, std_rmse = get_mean_std(torch.mean(rmse_tensor_all,dim=0))
+        mean_rmv, std_rmv = get_mean_std(torch.mean(rmv_tensor_all,dim=0))
+                
+    return mean_rmse, std_rmse, mean_rmv, std_rmv
 
 
 if __name__ == "__main__":
     args = get_parameters()
-    args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
-    args.local_input_dim = args.obs_dim + args.st_output_dim * 2 
+    if args.obs_distribution:
+        print("Apply STs on the ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.obs_dim + args.st_output_dim * 2
+    else: 
+        print("Only apply an ST on the ensemble state data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim
+        args.local_input_dim = args.obs_dim + args.st_output_dim
     
     # if args.cp_load_path == "no":
     #     raise ValueError("The parameter cp_load_path is invalid.")
@@ -254,10 +285,7 @@ if __name__ == "__main__":
     # EnKF
     print("Original EnKF with localization")
 
-    rmse_tensor_enkf, rmv_tensor_enkf, K_tensor_enkf, loc_enkf = test_SequentialEnKF(test_loader, args, infl=1.09, H_info=H_info, localization=False)
-    print("Shape of EnKF RMSE tensor:", rmse_tensor_enkf.shape)
-    mean_rmse_enkf, std_rmse_enkf = get_mean_std(torch.mean(rmse_tensor_enkf,dim=0))
-    mean_rmv_enkf, std_rmv_enkf = get_mean_std(torch.mean(rmv_tensor_enkf,dim=0))
+    mean_rmse_enkf, std_rmse_enkf, mean_rmv_enkf, std_rmv_enkf = test_SequentialEnKF(test_loader, args, infl=1.09, H_info=H_info, localization=False)
     print(f"RMSE: {mean_rmse_enkf:.3f} ± {std_rmse_enkf:.3f}")
     print(f"RMV: {mean_rmv_enkf:.3f} ± {std_rmv_enkf:.3f}")
 
@@ -269,7 +297,10 @@ if __name__ == "__main__":
     else:
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
     st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-    st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
+    if args.obs_distribution:
+        st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
+    else:
+        st_model2 = NaiveNetwork(1)
     if args.use_data_parallel:
         model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
     model_list = [model, local_model, st_model1, st_model2]
@@ -287,10 +318,7 @@ if __name__ == "__main__":
     # test
     print("Test NN Results")
     loss_list_nn = []
-    rmse_tensor_nn, rmv_tensor_nn, K_tensor_nn, loc_nn = test_model(test_loader, model_list, args, H_info=H_info)
-    print("Shape of NN loss tensor:", rmse_tensor_nn.shape)
-    mean_rmse_nn, std_rmse_nn = get_mean_std(torch.mean(rmse_tensor_nn,dim=0))
-    mean_rmv_nn, std_rmv_nn = get_mean_std(torch.mean(rmv_tensor_nn,dim=0))
+    mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn = test_model(test_loader, model_list, args, H_info=H_info)
     print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
     print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
 
@@ -298,16 +326,16 @@ if __name__ == "__main__":
     # save results
     tensor_dict = {
         # 'enkf':{
-        #     'rmse':rmse_tensor_enkf,
-        #     'rmv':rmv_tensor_enkf,
-        #     'k':K_tensor_enkf,
-        #     'loc':loc_enkf,
+        #     'mean_rmse':mean_rmse_enkf,
+        #     'std_rmse':std_rmse_enkf,
+        #     'mean_rmv':mean_rmv_enkf,
+        #     'std_rmv':std_rmv_enkf,
         # },
         'nn':{
-            'rmse':rmse_tensor_nn,
-            'rmv':rmv_tensor_nn,
-            'k':K_tensor_nn,
-            'loc':loc_nn,
+            'mean_rmse':mean_rmse_nn,
+            'std_rmse':std_rmse_nn,
+            'mean_rmv':mean_rmv_nn,
+            'std_rmv':std_rmv_nn,
         },
         'cp_load_path': args.cp_load_path,
         'sigma_y': args.sigma_y,
