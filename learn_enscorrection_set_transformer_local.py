@@ -16,7 +16,6 @@ from EnKF_utils import StochasticENKF_analysis, loc_EnKF_analysis, EnKF_analysis
 from networks import ComplexAttentionModel, AttentionModel, NaiveNetwork, SetTransformer, Simple_MLP
 from localization import pairwise_distances, dist2coeff, create_loc_mat
 
-
 def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=None):
     model, local_model, st_model1, st_model2 = model_list
     
@@ -321,6 +320,8 @@ if __name__ == "__main__":
         print("Only apply an ST on the ensemble state data.")
         args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim
         args.local_input_dim = args.obs_dim + args.st_output_dim
+    
+    torch.cuda.set_device(args.device)
     
     if args.seed is not None and args.seed != "None":
         torch.manual_seed(int(args.seed))

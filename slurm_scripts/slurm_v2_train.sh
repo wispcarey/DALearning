@@ -2,12 +2,12 @@
 
 # Submit this script with: sbatch <this-filename>
 
-#SBATCH --time=00:10:00     # walltime (10 minutes)
+#SBATCH --time=36:00:00     # walltime (36 hours)
 #SBATCH --nodes=1           # number of nodes (1 node)
-#SBATCH --gres=gpu:v100:2   # 2 V100 GPUs with 16GB memory each
+#SBATCH --gres=gpu:4        # 4 GPUs of any type
 #SBATCH --partition=gpu     # use GPU partition
-#SBATCH --ntasks=2          # 2 tasks (1 task per GPU)
-#SBATCH -J "bohan-gpu-test-LearnKalmanGain"   # job name
+#SBATCH --ntasks=1          # 1 task
+#SBATCH -J "bohan-gpu-LearnKalmanGain"   # job name
 #SBATCH --mail-user=bhchen@caltech.edu # email address
 #SBATCH --mail-type=BEGIN   # email notification at start
 #SBATCH --mail-type=END     # email notification at end
@@ -24,4 +24,4 @@
 cd ../script  # Assuming `script` folder is one level up from `slurm_script`
 
 # Run your program
-bash v2_run_enscorrection_train.sh
+bash run_enscorrection_train.sh

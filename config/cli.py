@@ -178,7 +178,7 @@ def get_parameters():
     args.obs_inds = DATASET_INFO[args.dataset]['obs_inds']
     args.clamp = DATASET_INFO[args.dataset]['clamp']
     
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
     print(f"Detected {torch.cuda.device_count()} GPUs")
     if num_gpus > 1:
