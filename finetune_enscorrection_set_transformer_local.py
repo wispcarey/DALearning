@@ -40,6 +40,10 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
         H_fun, H = H_info
 
     model.train()
+    
+    success_count = 0
+    total_count = 0
+    num_all_nan_batch = 0
     for batch_ind, batch_v in enumerate(loader):
         t_start = time.time()
         batch_v = batch_v.to(device=args.device)
@@ -87,15 +91,21 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
             # for the ensemble dataset and observations
             mean_hv = torch.mean(hv, dim=1, keepdim=True).expand(-1, N, -1)
             mean_ens_v_f = torch.mean(ens_v_f, dim=1, keepdim=True).expand(-1, N, -1)
-            ens_nn_output = st_model1(ens_v_f)
             
-            # nn inputs
-            if args.obs_distribution:
+            # st and following nn inputs
+            if args.st_type == 'state_only':
+                ens_nn_output = st_model1(ens_v_f)
+                nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                    ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
+            elif args.st_type == 'separate':
+                ens_nn_output = st_model1(ens_v_f)
                 ens_o_nn_output = st_model2(hv)                
                 nn_input = torch.cat([ens_v_f, hv, ens_i, 
                                     ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
                 local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
-            else:
+            elif args.st_type == 'joint':
+                ens_nn_output = st_model1(torch.cat([ens_v_f, hv], dim=-1))
                 nn_input = torch.cat([ens_v_f, hv, ens_i, 
                                     ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
                 local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
@@ -108,14 +118,18 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
             R = args.sigma_y ** 2 * torch.eye(d).unsqueeze(0).expand(B, -1, -1).to(args.device)
             
             # get localization matrices
-            loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
-            # loc_nn_output = torch.sigmoid(local_model(local_nn_input))
-            loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
-            loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
+            if args.no_localization:
+                K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) 
+                K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) + R * (N - 1)
+            else:
+                loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
+                loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
+                loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
+                
+                K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
+                K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
             
             # Kalman Gain
-            K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
-            K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
             K = torch.bmm(K1, torch.inverse(K2))
             ens_v_a = Vnn1 + torch.bmm(ens_i, K.transpose(1, 2))
             
@@ -139,40 +153,52 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
                 ignore_first = 0
         else:
             ignore_first = args.ignore_first
-            
-        if args.loss_type == "l2":
-            loss = torch.mean((ens_tensor.mean(dim=2)[ignore_first:, :, :] - batch_v[ignore_first:end_ind + 1, :, :]) ** 2)
-        elif args.loss_type == 'normalized_l2':
-            error_norm_2 = torch.sum((ens_tensor.mean(dim=2)[ignore_first:, :, :] - batch_v[ignore_first:end_ind + 1, :, :]) ** 2, dim=2)
-            true_norm_2 = torch.sum(batch_v[ignore_first:end_ind + 1, :, :] ** 2, dim=2)
-            loss = torch.mean(error_norm_2 / true_norm_2)
-        elif args.loss_type == 'rmse':
-            loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)))
-        else:
-            raise NotImplementedError("loss_type is not implemented")
         
-        losses.update(loss.item(), batch_v.shape[0])
+        # remove nan batch indices
+        nan_mask = torch.isnan(ens_tensor).any(dim=(0, 2, 3))  
+        valid_B_mask = ~nan_mask
 
-        # optimization
-        # for name, param in st_model1.named_parameters():
-        #     if param.grad is not None:
-        #         print(f"{name} gradient norm: {param.grad.norm().item()}")
-        #     else:
-        #         print(f"{name} no gradient")
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        # loss
+        if not valid_B_mask.any():
+            num_all_nan_batch += 1
+        else:
+            if args.loss_type == "l2":
+                loss = torch.mean((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:end_ind + 1, valid_B_mask, :]) ** 2)
+            elif args.loss_type == 'normalized_l2':
+                error_norm_2 = torch.sum((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:end_ind + 1, valid_B_mask, :]) ** 2, dim=2)
+                true_norm_2 = torch.sum(batch_v[ignore_first:end_ind + 1, valid_B_mask, :] ** 2, dim=2)
+                loss = torch.mean(error_norm_2 / true_norm_2)
+            elif args.loss_type == 'rmse':
+                loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:, valid_B_mask, :]) ** 2, dim=2)))
+            else:
+                raise NotImplementedError("loss_type is not implemented")
+
+            success_count += torch.sum(valid_B_mask)
+            
+            losses.update(loss.item(), torch.sum(valid_B_mask))
+
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        
+        total_count += batch_v.shape[1]
 
         # batch time
         batch_time.update(time.time() - t_start)
+        
+        if num_all_nan_batch == len(loader):
+            # raise RuntimeError("All batches resulted in NaN loss. Stopping training.")
+            loss = torch.tensor(float('nan')) 
+            losses.update(loss.item(), 1)
 
         if (batch_ind + 1) % args.print_batch == 0:
             print(f'Training epoch : [{epoch}][{batch_ind + 1}/{len(loader)}]\t'
-                  f'Batch time {batch_time.val:.3f} (Avg: {batch_time.avg:.3f})\t'
-                  f'Loss {losses.val:.3f} (Avg: {losses.avg:.3f})\t'
-                  f'Current learning rate: {optimizer.param_groups[0]["lr"]:.2e}'
-                  )
+                f'Batch time {batch_time.val:.3f} (Avg: {batch_time.avg:.3f})\t'
+                f'Loss {losses.val:.3f} (Avg: {losses.avg:.3f})\t'
+                f'Current learning rate: {optimizer.param_groups[0]["lr"]:.2e}\t'
+                f'No NAN Percentage: {success_count / total_count * 100: .2f}%\t'
+                )
 
     scheduler.step()
     return losses.avg
@@ -206,6 +232,9 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
     # loc_mat_yy = dist2coeff(args.Lyy, radius=4).unsqueeze(0)
 
     with torch.no_grad():
+        success_count = 0
+        total_count = 0
+        num_all_nan_batch = 0
         for batch_v in loader:
             batch_v = batch_v.to(device=args.device)
 
@@ -230,6 +259,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                     if args.dataset == 'ks':
                         ens_v_a = forward_fun(ens_v_a, None, args.dt / args.dt_iter)
                     else:
+                        
                         ens_v_a = rk4(forward_fun, ens_v_a, i * args.dt + j * args.dt / args.dt_iter,
                                     args.dt / args.dt_iter)
                 ens_v_f = ens_v_a.view(-1, m, args.ori_dim)
@@ -250,16 +280,21 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                 # for the ensemble dataset and observations
                 mean_hv = torch.mean(hv, dim=1, keepdim=True).expand(-1, N, -1)
                 mean_ens_v_f = torch.mean(ens_v_f, dim=1, keepdim=True).expand(-1, N, -1)
-                ens_nn_output = st_model1(ens_v_f)
-                ens_o_nn_output = st_model2(hv)
                 
-                # nn inputs
-                if args.obs_distribution:
+                # nn_inputs
+                if args.st_type == 'state_only':
+                    ens_nn_output = st_model1(ens_v_f)
+                    nn_input = torch.cat([ens_v_f, hv, ens_i, 
+                                        ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
+                    local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
+                elif args.st_type == 'separate':
+                    ens_nn_output = st_model1(ens_v_f)
                     ens_o_nn_output = st_model2(hv)                
                     nn_input = torch.cat([ens_v_f, hv, ens_i, 
                                         ens_nn_output.unsqueeze(1).expand(-1, N, -1), ens_o_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
                     local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output, ens_o_nn_output], dim=-1)
-                else:
+                elif args.st_type == 'joint':
+                    ens_nn_output = st_model1(torch.cat([ens_v_f, hv], dim=-1))
                     nn_input = torch.cat([ens_v_f, hv, ens_i, 
                                         ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
                     local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
@@ -273,16 +308,16 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                 
                 # get localization matrices
                 if args.no_localization:
-                    loc_mat_vy = torch.ones(B, D, d, device=args.device)
-                    loc_mat_yy = torch.ones(B, d, d, device=args.device)
+                    K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn)
+                    K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) + R * (N - 1)
                 else:
                     loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
                     loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
                     loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
+                    
+                    K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
+                    K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
                 
-                # Kalman Gain
-                K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
-                K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
                 K = torch.bmm(K1, torch.inverse(K2))
                 ens_v_a = Vnn1 + torch.bmm(ens_i, K.transpose(1, 2))
                 
@@ -298,13 +333,28 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
             ens_tensor = torch.stack(ens_list)
             K_tensor = torch.stack(K_list)
 
+            # remove nan batch indices
+            nan_mask = torch.isnan(ens_tensor).any(dim=(0, 2, 3))  
+            valid_B_mask = ~nan_mask
+            
             # Loss functions
-            loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)))
-            losses.update(loss.item(), batch_v.shape[0])
+            if not valid_B_mask.any():
+                num_all_nan_batch += 1
+            else:
+                loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2)[:, valid_B_mask, :] - batch_v[:, valid_B_mask, :]) ** 2, dim=2)))
+                success_count += torch.sum(valid_B_mask)
+                losses.update(loss.item(), torch.sum(valid_B_mask))
+            
+            total_count += batch_v.shape[1]
+        
+        if num_all_nan_batch == len(loader):
+            loss = torch.tensor(float('nan')) 
+            losses.update(loss.item(), 1)
 
         if verbose_test:
             print(f'Average Test RMSE: {losses.avg}\t'
                   f'Average One-step Time: {step_time.avg}\t'
+                  f'No NAN Percentage: {success_count / total_count * 100: .2f}%\t'
                   )
             plot_results_2d(ens_tensor.mean(dim=2)[:, 0, :].cpu().numpy().T, batch_v[:, 0, :].cpu().numpy().T, 0, 499, 
                             plot_inds=[0,1,2], save_path=os.path.join(args.save_folder, "EnKF_results.png"))
@@ -315,14 +365,20 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
 if __name__ == "__main__":
     args = get_parameters()
     
-    if args.obs_distribution:
-        print("Apply STs on the ensemble state data and observation data.")
-        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
-        args.local_input_dim = args.obs_dim + args.st_output_dim * 2
-    else: 
+    if args.st_type == 'state_only':
         print("Only apply an ST on the ensemble state data.")
         args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim
         args.local_input_dim = args.obs_dim + args.st_output_dim
+    elif args.st_type == "separate": 
+        print("Apply STs separately on the ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.obs_dim + args.st_output_dim * 2
+    elif args.st_type == 'joint':
+        print("Apply an ST on the joint distribution of ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.obs_dim + args.st_output_dim * 2
+    else:
+        raise ValueError("Please use a valid st_type.")
 
     if args.cp_load_path != "no":
         suffix = "_tuned"
@@ -330,7 +386,7 @@ if __name__ == "__main__":
         suffix = ""
     folder_name = os.path.join("save",
                                datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
-    folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_EnST{suffix}_{args.loss_type}"
+    folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_EnST{suffix}_{args.st_type}"
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
     args.save_folder = folder_name
@@ -341,7 +397,6 @@ if __name__ == "__main__":
 
     # H_info
     H_info = partial_obs_operator(args.ori_dim, args.obs_inds, args.device)
-    print(H_info[1].shape)
     
     # localization
     full_inds = torch.arange(0, args.ori_dim)
@@ -358,10 +413,15 @@ if __name__ == "__main__":
         local_model = NaiveNetwork(1)
     else:
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
-    st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-    if args.obs_distribution:
+    if args.st_type == 'separate':
+        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
         st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-    else:
+    elif args.st_type == 'state_only':
+        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=2).to(args.device)
+        st_model2 = NaiveNetwork(1)
+    elif args.st_type == 'joint':
+        st_model1 = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=16, 
+                                   output_dim=args.st_output_dim * 2, hidden_dim=args.hidden_dim, num_layers=2).to(args.device)
         st_model2 = NaiveNetwork(1)
     if args.use_data_parallel:
         model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)

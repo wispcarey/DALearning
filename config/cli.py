@@ -89,8 +89,16 @@ def get_parameters():
                         help='do not apply localization')
     parser.add_argument('--st_output_dim', type=int, default=64,
                         help='dimension of set transformer output')
-    parser.add_argument('--obs_distribution', action='store_true',
-                        help='apply set transformer on the observation distribution (not necessary for linear observation)')
+    parser.add_argument('--st_type', type=str, default='joint', choices=['state_only', 'separate', 'joint'],
+        help=(
+            'Specifies how the Set Transformer is applied to distributions. '
+            '"state_only" is used to process only the state distribution, '
+            '"separate" processes the state distribution and observation distribution independently, '
+            'and "joint" is used to process the joint distribution of state and observation.'
+        )
+    )
+
+
     
 
     # output setting
