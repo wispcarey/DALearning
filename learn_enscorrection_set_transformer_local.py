@@ -188,7 +188,7 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
         
         if num_all_nan_batch == len(loader):
             # raise RuntimeError("All batches resulted in NaN loss. Stopping training.")
-            loss = torch.tensor(float('nan')) 
+            loss = torch.tensor(float('nan')).to(args.device)
             losses.update(loss.item(), 1)
 
         if (batch_ind + 1) % args.print_batch == 0:
@@ -347,7 +347,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
             total_count += batch_v.shape[1]
         
         if num_all_nan_batch == len(loader):
-            loss = torch.tensor(float('nan')) 
+            loss = torch.tensor(float('nan')).to(args.device)
             losses.update(loss.item(), 1)
 
         if verbose_test:
@@ -404,14 +404,17 @@ if __name__ == "__main__":
     else:
         local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
     if args.st_type == 'separate':
-        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
-        st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=1).to(args.device)
+        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
+                                    hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
+        st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
+                                    hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
     elif args.st_type == 'state_only':
-        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, hidden_dim=args.hidden_dim, num_layers=2).to(args.device)
+        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
+                                    hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
         st_model2 = NaiveNetwork(1)
     elif args.st_type == 'joint':
-        st_model1 = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=16, 
-                                   output_dim=args.st_output_dim * 2, hidden_dim=args.hidden_dim, num_layers=2).to(args.device)
+        st_model1 = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim * 2, 
+                                    hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
         st_model2 = NaiveNetwork(1)
     if args.use_data_parallel:
         model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)

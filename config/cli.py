@@ -97,6 +97,8 @@ def get_parameters():
             'and "joint" is used to process the joint distribution of state and observation.'
         )
     )
+    parser.add_argument('--unfreeze_WQ', action='store_true',
+                        help='unfreeze Q weights in the PMA layer')
 
 
     

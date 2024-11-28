@@ -160,13 +160,43 @@ class ComplexAttentionModel(nn.Module):
         x = self.fc5(x)
         return x
 
+# class MAB(nn.Module):
+#     """
+#     Multihead Attention Block (MAB)
+#     """
+#     def __init__(self, dim_Q, dim_KV, num_heads):
+#         super(MAB, self).__init__()
+#         self.dim_V = dim_Q  # Output dimension matches the query dimension
+#         self.multihead_attn = nn.MultiheadAttention(embed_dim=self.dim_V, num_heads=num_heads)
+#         self.ln1 = nn.LayerNorm(self.dim_V)
+#         self.ln2 = nn.LayerNorm(self.dim_V)
+#         self.ffn = nn.Sequential(
+#             nn.Linear(self.dim_V, self.dim_V),
+#             nn.ReLU(),
+#             nn.Linear(self.dim_V, self.dim_V)
+#         )
+
+#     def forward(self, Q, K):
+#         # Q, K: [batch_size, N, dim]
+#         Q_norm = self.ln1(Q)
+#         K_norm = self.ln1(K)
+#         Q_norm = Q_norm.transpose(0, 1)  # Convert to [N, batch_size, dim]
+#         K_norm = K_norm.transpose(0, 1)
+#         attn_output, _ = self.multihead_attn(Q_norm, K_norm, K_norm)
+#         attn_output = attn_output.transpose(0, 1)  # Convert back to [batch_size, N, dim]
+#         H = Q + attn_output  # Residual connection
+#         H_norm = self.ln2(H)
+#         H = H + self.ffn(H_norm)  # Residual connection
+#         return H
+
 class MAB(nn.Module):
     """
     Multihead Attention Block (MAB)
     """
-    def __init__(self, dim_Q, dim_KV, num_heads):
+    def __init__(self, dim_Q, dim_KV, num_heads, freeze_WQ=False):
         super(MAB, self).__init__()
         self.dim_V = dim_Q  # Output dimension matches the query dimension
+        self.num_heads = num_heads
         self.multihead_attn = nn.MultiheadAttention(embed_dim=self.dim_V, num_heads=num_heads)
         self.ln1 = nn.LayerNorm(self.dim_V)
         self.ln2 = nn.LayerNorm(self.dim_V)
@@ -175,15 +205,41 @@ class MAB(nn.Module):
             nn.ReLU(),
             nn.Linear(self.dim_V, self.dim_V)
         )
+        self.freeze_WQ = freeze_WQ
+        if self.freeze_WQ:
+            self._freeze_WQ()
+
+    def _freeze_WQ(self):
+        # Get the in_proj_weight parameter
+        in_proj_weight = self.multihead_attn.in_proj_weight
+        embed_dim = self.multihead_attn.embed_dim
+        # Set W_Q to the identity matrix
+        with torch.no_grad():
+            in_proj_weight[:embed_dim, :] = torch.eye(embed_dim)
+        # Register a backward hook to zero out gradients for W_Q
+        def hook(grad):
+            grad[:embed_dim, :] = 0
+            return grad
+        in_proj_weight.register_hook(hook)
+        # Handle the bias term if it exists
+        if self.multihead_attn.in_proj_bias is not None:
+            in_proj_bias = self.multihead_attn.in_proj_bias
+            with torch.no_grad():
+                in_proj_bias[:embed_dim] = 0
+            # Register a backward hook for the bias
+            def bias_hook(grad):
+                grad[:embed_dim] = 0
+                return grad
+            in_proj_bias.register_hook(bias_hook)
 
     def forward(self, Q, K):
-        # Q, K: [batch_size, N, dim]
+        # Q, K: [batch_size, N, dim_V]
         Q_norm = self.ln1(Q)
         K_norm = self.ln1(K)
-        Q_norm = Q_norm.transpose(0, 1)  # Convert to [N, batch_size, dim]
+        Q_norm = Q_norm.transpose(0, 1)  # Convert to [N, batch_size, dim_V]
         K_norm = K_norm.transpose(0, 1)
         attn_output, _ = self.multihead_attn(Q_norm, K_norm, K_norm)
-        attn_output = attn_output.transpose(0, 1)  # Convert back to [batch_size, N, dim]
+        attn_output = attn_output.transpose(0, 1)  # Convert back to [batch_size, N, dim_V]
         H = Q + attn_output  # Residual connection
         H_norm = self.ln2(H)
         H = H + self.ffn(H_norm)  # Residual connection
@@ -206,10 +262,10 @@ class PMA(nn.Module):
     """
     Pooling by Multihead Attention (PMA)
     """
-    def __init__(self, dim, num_heads, num_seeds):
+    def __init__(self, dim, num_heads, num_seeds, freeze_WQ=False):
         super(PMA, self).__init__()
         self.S = nn.Parameter(torch.randn(1, num_seeds, dim))  # Seed vectors
-        self.mab = MAB(dim, dim, num_heads)
+        self.mab = MAB(dim, dim, num_heads, freeze_WQ)
 
     def forward(self, X):
         batch_size = X.size(0)
@@ -220,7 +276,7 @@ class SetTransformer(nn.Module):
     """
     Set Transformer main model with customizable number of SAB layers.
     """
-    def __init__(self, input_dim, num_heads, num_inds, output_dim, hidden_dim, num_layers=2):
+    def __init__(self, input_dim, num_heads, num_inds, output_dim, hidden_dim, num_layers=2, freeze_WQ=False):
         super(SetTransformer, self).__init__()
         # Input embedding layer
         self.embedding = nn.Linear(input_dim, hidden_dim)
@@ -229,7 +285,7 @@ class SetTransformer(nn.Module):
             *[SAB(hidden_dim, hidden_dim, num_heads) for _ in range(num_layers)]
         )
         # Pooling layer
-        self.pma = PMA(hidden_dim, num_heads, num_inds)
+        self.pma = PMA(hidden_dim, num_heads, num_inds, freeze_WQ)
         # Self-attention decoder blocks
         self.dec = nn.Sequential(
             *[SAB(hidden_dim, hidden_dim, num_heads) for _ in range(num_layers)]
