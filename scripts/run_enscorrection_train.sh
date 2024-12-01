@@ -26,6 +26,8 @@ python learn_enscorrection_set_transformer_local.py \
     --sigma_y 1 \
     --seed 42 \
     --no_localization \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 python learn_enscorrection_set_transformer_local.py \
@@ -34,6 +36,8 @@ python learn_enscorrection_set_transformer_local.py \
     --sigma_y 0.7 \
     --seed 42 \
     --no_localization \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 python learn_enscorrection_set_transformer_local.py \
@@ -41,6 +45,8 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 1 \
     --seed 42 \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 python learn_enscorrection_set_transformer_local.py \
@@ -48,6 +54,8 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 0.7 \
     --seed 42 \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 python learn_enscorrection_set_transformer_local.py \
@@ -55,6 +63,8 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 1 \
     --seed 42 \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 python learn_enscorrection_set_transformer_local.py \
@@ -62,6 +72,8 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 0.7 \
     --seed 42 \
+    --num_loader_workers 1 \
+    --st_type separate \
     --adjust_lr
 
 

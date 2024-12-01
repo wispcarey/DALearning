@@ -1,0 +1,2 @@
+/var/spool/slurmd/job45358784/slurm_script: line 24: cd: ../script: No such file or directory
+bash: run_enscorrection_train.sh: No such file or directory

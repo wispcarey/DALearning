@@ -2,7 +2,7 @@
 
 # Submit this script with: sbatch <this-filename>
 
-#SBATCH --time=36:00:00     # walltime (36 hours)
+#SBATCH --time=2-00:00:00     # walltime (2 days)
 #SBATCH --nodes=1           # number of nodes (1 node)
 #SBATCH --gres=gpu:4        # 4 GPUs of any type
 #SBATCH --partition=gpu     # use GPU partition
@@ -21,7 +21,7 @@
 # module load cuda/12.2  # Adjusted to CUDA version 12.2
 
 # Change to the directory containing v2_run_fine_tuning.sh
-cd ../script  # Assuming `script` folder is one level up from `slurm_script`
+cd ../scripts  # Assuming `scripts` folder is one level up from `slurm_script`
 
 # Run your program
 bash run_enscorrection_train.sh
