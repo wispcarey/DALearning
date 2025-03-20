@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import sys
+import datetime
+from contextlib import contextmanager
 
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -8,7 +11,39 @@ from torch.optim import AdamW, SGD
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
+from dapper.mods.KS import Model as DapperKS
 
+@contextmanager
+def redirect_output(save_folder, filename="output.txt"):
+    """
+    Context manager to redirect all stdout and stderr output to a specified file.
+    
+    Args:
+        save_folder (str): The folder where the output file should be saved.
+        filename (str): The name of the output file (default: "output.txt").
+    """
+    os.makedirs(save_folder, exist_ok=True)  # Ensure the directory exists
+    output_file = os.path.join(save_folder, filename)
+    
+    # Backup original stdout and stderr
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    
+    file_exists = os.path.exists(output_file)
+    
+    with open(output_file, "a") as f:  # Open in append mode
+        if file_exists:
+            f.write(f"\n[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]\n")
+        
+        sys.stdout = f
+        sys.stderr = f
+        try:
+            yield  # Execute the code block within the context
+        finally:
+            # Restore stdout and stderr after execution
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            print(f"Output appended to {output_file}")  # Notify in the console
 
 def check_nan_in_model(model):
     for param in model.parameters():
@@ -338,12 +373,14 @@ def gen_data(dataset, t, steps_test, steps_valid, v0=None, sigma_v=0,
     elif dataset == "ks":
         # Kuramoto-Sivashinsky model specifics
         model = etd_rk4_wrapper(device=None, dt=dt / dt_iter)
-        grid = 32 * np.pi * torch.linspace(0, 1, 128 + 1, dtype=torch.float32)[1:]  # Ensure float32
-        x0_Kassam = torch.cos(grid / 16) * (1 + torch.sin(grid / 16))
-        x0 = x0_Kassam.clone().unsqueeze(0)
-        # Single 150-step integration to stabilize x0
-        x0 = custom_int(x0, model, 150, dt, dt_iter)[-1:].to(dtype=torch.float32)  # Ensure float32
-        default_v0 = custom_int(x0, model, 10 ** 3, dt, dt_iter)[-1:].to(dtype=torch.float32)  # Ensure float32
+        # grid = 32 * np.pi * torch.linspace(0, 1, 128 + 1, dtype=torch.float32)[1:]  # Ensure float32
+        # x0_Kassam = torch.cos(grid / 16) * (1 + torch.sin(grid / 16))
+        # x0 = x0_Kassam.clone().unsqueeze(0)
+        # # Single 150-step integration to stabilize x0
+        # x0 = custom_int(x0, model, 150, dt, dt_iter)[-1:].to(dtype=torch.float32)  # Ensure float32
+        # default_v0 = custom_int(x0, model, 10 ** 3, dt, dt_iter)[-1:].to(dtype=torch.float32)  # Ensure float32
+        dapper_x0 = DapperKS(dt=dt.numpy() / dt_iter).x0
+        default_v0 = torch.randn(1, 128, dtype=torch.float32) + dapper_x0
     else:
         raise ValueError('Dataset not implemented')
 
@@ -447,20 +484,8 @@ def etd_rk4_wrapper(device=None, dt=0.5, DL=32, Nx=128):
     return inner
 
 
-def odeint_etd_wrapper(device=None, dt=0.5, DL=32, Nx=128):
-    """ Kind of wasteful, but reduces code duplication elsewhere """
-    ode_func = etd_rk4_wrapper(device, dt, DL, Nx)
-
-    def inner(t, x0):
-        x1 = ode_func(x0, dt, dt)
-        x1 = ode_func(x1, dt, dt)
-        return x1 - x0
-
-    return inner
-
-
 # This basically is just a hack for KS training
-def custom_int(x0, int_function, steps, dt=0.5, dt_iter=2):
+def custom_int(x0, int_function, steps, dt=0.25, dt_iter=1):
     out = [x0]
     x = x0
     for _ in range(steps):

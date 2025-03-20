@@ -15,6 +15,7 @@ DATASET_INFO = {
         'batch_size': 1024,
         'train_steps': 60,
         'train_traj_num': 8192,
+        'sigma_ens': 1,
     },
     'lorenz96': {
         'dim': 40,
@@ -30,20 +31,22 @@ DATASET_INFO = {
         'batch_size': 512,
         'train_steps': 60,
         'train_traj_num': 8192,
+        'sigma_ens': 1,
     },
     'ks': {
         'dim': 128,
-        'obs_dim': 32,
-        'obs_inds': torch.arange(0, 128, 4),
+        'obs_dim': 16,
+        'obs_inds': torch.arange(0, 128, 8),
         'dt': 1,
         'dt_iter': 4,
         'test_steps': 2000,
         'test_traj_num': 64,
         'hidden_dim': 64,
         'clamp': 10,
-        'learning_rate': 1e-3, 
+        'learning_rate': 5e-4, 
         'batch_size': 256,
         'train_steps': 60,
         'train_traj_num': 8192,
+        'sigma_ens': 1,
     }
 }

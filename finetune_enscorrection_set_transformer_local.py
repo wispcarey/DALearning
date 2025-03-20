@@ -2,6 +2,7 @@ import numpy as np
 import time
 import datetime
 import os
+import math
 
 import torch
 import torch.nn as nn
@@ -12,6 +13,7 @@ from config.dataset_info import DATASET_INFO
 from utils import plot_results_2d, setup_optimizer_and_scheduler, save_checkpoint, load_checkpoint
 from utils import L63, L96, rk4, etd_rk4_wrapper
 from utils import AverageMeter, mystery_operator, partial_obs_operator, get_dataloader, batch_covariance
+from utils import redirect_output
 from EnKF_utils import StochasticENKF_analysis, loc_EnKF_analysis, EnKF_analysis, post_process, mrdiv, mean0
 from networks import ComplexAttentionModel, AttentionModel, NaiveNetwork, SetTransformer, Simple_MLP
 from localization import pairwise_distances, dist2coeff, create_loc_mat
@@ -384,102 +386,111 @@ if __name__ == "__main__":
         suffix = "_tuned"
     else:
         suffix = ""
-    folder_name = os.path.join("save",
-                               datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
+    folder_name = os.path.join("save",datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
     folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_EnST{suffix}_{args.st_type}"
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
     args.save_folder = folder_name
 
+    # redirect output
+    with redirect_output(args.save_folder, filename="ft_output.txt"):
+        if args.seed is not None and args.seed != "None":
+            torch.manual_seed(int(args.seed))
 
-    if args.seed is not None and args.seed != "None":
-        torch.manual_seed(int(args.seed))
+        # H_info
+        H_info = partial_obs_operator(args.ori_dim, args.obs_inds, args.device)
+        
+        # localization
+        full_inds = torch.arange(0, args.ori_dim)
+        Lvy = pairwise_distances(full_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
+        Lyy = pairwise_distances(args.obs_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
+        args.diff_dist = torch.unique(torch.cat((Lvy.flatten(), Lyy.flatten())))
+        args.num_dist = len(args.diff_dist)
+        args.Lvy = Lvy
+        args.Lyy = Lyy
 
-    # H_info
-    H_info = partial_obs_operator(args.ori_dim, args.obs_inds, args.device)
-    
-    # localization
-    full_inds = torch.arange(0, args.ori_dim)
-    Lvy = pairwise_distances(full_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
-    Lyy = pairwise_distances(args.obs_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
-    args.diff_dist = torch.unique(torch.cat((Lvy.flatten(), Lyy.flatten())))
-    args.num_dist = len(args.diff_dist)
-    args.Lvy = Lvy
-    args.Lyy = Lyy
-
-    # set models
-    model = Simple_MLP(d_input=args.input_dim, d_output=args.obs_dim + 2 * args.ori_dim, num_hidden_layers=2).to(args.device)
-    if args.no_localization:
-        local_model = NaiveNetwork(1)
-    else:
-        local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
-    if args.st_type == 'separate':
-        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
-                                    hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
-        st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
-                                    hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
-    elif args.st_type == 'state_only':
-        st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim, 
-                                    hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
-        st_model2 = NaiveNetwork(1)
-    elif args.st_type == 'joint':
-        st_model1 = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=16, output_dim=args.st_output_dim * 2, 
-                                    hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
-        st_model2 = NaiveNetwork(1)
-    if args.use_data_parallel:
-        model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
-    model_list = [model, local_model, st_model1, st_model2]
-    total_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list)
-    print(f'Total number of parameters: {total_params}')
-
-
-    ##################### fine-tuning on different N
-    N_list = [5,10,15,20,40,60,100]
-    ori_batch_size = args.batch_size
-
-    for N in N_list:
-        if N == 40 or N == 60:
-            args.batch_size = ori_batch_size // 2
-        elif N == 100:
-            args.batch_size = ori_batch_size // 4
-        args.N = N
-        # optimizer
-        optimizer, scheduler = setup_optimizer_and_scheduler(model_list, args)
-        train_loader, test_loader = get_dataloader(args)
-
-        # load checkpoint
-        if args.cp_load_path != "no":
-            load_checkpoint(model_list, None, None, filename=args.cp_load_path, use_data_parallel=args.use_data_parallel)
-            for param in st_model1.parameters():
-                param.requires_grad = False
-            for param in st_model2.parameters():
-                param.requires_grad = False
-
-        # training
-        train_loss_list = []
-        test_loss_list = []
-        test_epochs = []
-        if args.test_only:
-            print("Test Only")
-            loss_list_nn = []
-            for i in range(args.test_rounds):
-                loss_val, _, ens_tensor_nn, K_tensor_nn = test_model(test_loader, model_list, args, verbose_test=False, H_info=H_info)
-                loss_list_nn.append(loss_val)
-            print("Average RMSE:", torch.mean(torch.tensor(loss_list_nn)))
+        # set models
+        model = Simple_MLP(d_input=args.input_dim, d_output=args.obs_dim + 2 * args.ori_dim, num_hidden_layers=2).to(args.device)
+        if args.no_localization:
+            local_model = NaiveNetwork(1)
         else:
-            print(f"Fine-tuning Start for N={N}")
-            test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
-            test_loss_list.append(test_loss)
-            for epoch in range(1, 1 + args.epochs):
-                train_loss = train_model(epoch, train_loader, model_list, optimizer, scheduler, args, H_info=H_info)
-                train_loss_list.append(train_loss)
-                if epoch % args.save_epoch == 0:
-                    test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
-                    test_epochs.append(epoch)
-                    test_loss_list.append(test_loss)
-                    train_records = {"train_loss": train_loss_list, "test_loss": test_loss_list, "test_epochs": test_epochs}
-                    torch.save(train_records, os.path.join(folder_name, f"training_records_{N}.pt"))
-                    save_checkpoint(model_list, optimizer, scheduler, filename=os.path.join(folder_name, f"ft_cp_{N}_{epoch}.pth"))
+            local_model = Simple_MLP(d_input=args.local_input_dim, d_output=args.num_dist, num_hidden_layers=2).to(args.device)
+        if args.st_type == 'separate':
+            st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=args.st_num_seeds, output_dim=args.st_output_dim, 
+                                        hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
+            st_model2 = SetTransformer(input_dim=args.obs_dim, num_heads=8, num_inds=args.st_num_seeds, output_dim=args.st_output_dim, 
+                                        hidden_dim=args.hidden_dim, num_layers=1, freeze_WQ=not args.unfreeze_WQ).to(args.device)
+        elif args.st_type == 'state_only':
+            st_model1 = SetTransformer(input_dim=args.ori_dim, num_heads=8, num_inds=args.st_num_seeds, output_dim=args.st_output_dim, 
+                                        hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
+            st_model2 = NaiveNetwork(1)
+        elif args.st_type == 'joint':
+            st_model1 = SetTransformer(input_dim=args.ori_dim + args.obs_dim, num_heads=8, num_inds=args.st_num_seeds, output_dim=args.st_output_dim * 2, 
+                                        hidden_dim=args.hidden_dim, num_layers=2, freeze_WQ=not args.unfreeze_WQ).to(args.device)
+            st_model2 = NaiveNetwork(1)
+        if args.use_data_parallel:
+            model, local_model, st_model1, st_model2 = nn.DataParallel(model), nn.DataParallel(local_model), nn.DataParallel(st_model1), nn.DataParallel(st_model2)
+        model_list = [model, local_model, st_model1, st_model2]
+        total_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list)
+        print(f'Total number of parameters: {total_params}')
+        ft_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list[:2])
+        print(f'Fine-tuning parameters: {ft_params}')
+
+
+        ##################### fine-tuning on different N
+        # N_list = [5,10,15,20,40,60,100]
+        N_list = [40]
+        ori_batch_size = args.batch_size
+
+        for N in N_list:
+            # if N == 5:
+            #     args.batch_size = ori_batch_size * 2
+            # el
+            if N == 40 or N == 60:
+                args.batch_size = ori_batch_size // 2
+            elif N == 100:
+                args.batch_size = ori_batch_size // 4
+            else:
+                args.batch_size = ori_batch_size 
+            args.print_batch = math.ceil(args.train_traj_num / args.batch_size)
+            args.N = N
+            # optimizer
+            optimizer, scheduler = setup_optimizer_and_scheduler(model_list, args)
+            train_loader, test_loader = get_dataloader(args)
+
+            # load checkpoint
+            if args.cp_load_path != "no":
+                load_checkpoint(model_list, None, None, filename=args.cp_load_path, use_data_parallel=args.use_data_parallel)
+                # for param in st_model1.parameters():
+                #     param.requires_grad = False
+                # for param in st_model2.parameters():
+                #     param.requires_grad = False
+
+            # training
+            train_loss_list = []
+            test_loss_list = []
+            test_epochs = []
+            if args.test_only:
+                print("Test Only")
+                loss_list_nn = []
+                for i in range(args.test_rounds):
+                    loss_val, _, ens_tensor_nn, K_tensor_nn = test_model(test_loader, model_list, args, verbose_test=False, H_info=H_info)
+                    loss_list_nn.append(loss_val)
+                print("Average RMSE:", torch.mean(torch.tensor(loss_list_nn)))
+            else:
+                print(f"Fine-tuning Start for N={N}")
+                test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
+                test_loss_list.append(test_loss)
+                for epoch in range(1, 1 + args.epochs):
+                    train_loss = train_model(epoch, train_loader, model_list, optimizer, scheduler, args, H_info=H_info)
+                    train_loss_list.append(train_loss)
+                    if epoch % args.save_epoch == 0:
+                        test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
+                        test_epochs.append(epoch)
+                        test_loss_list.append(test_loss)
+                        train_records = {"train_loss": train_loss_list, "test_loss": test_loss_list, "test_epochs": test_epochs}
+                        torch.save(train_records, os.path.join(folder_name, f"training_records_{N}.pt"))
+                        save_checkpoint(model_list, optimizer, scheduler, filename=os.path.join(folder_name, f"ft_cp_{N}_{epoch}.pth"))
 
 
 

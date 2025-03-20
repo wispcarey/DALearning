@@ -57,7 +57,7 @@ def get_parameters():
                         help='Overlap rate when segmenting learning trajectories')
     parser.add_argument('--new_data', action='store_false',
                         help='do not use the check_dist option when generating training data')
-    parser.add_argument('--sigma_ens', type=float, default=0.1,
+    parser.add_argument('--sigma_ens', type=float_or_default, default="default",
                         help='std of initial ensemble samples')
     parser.add_argument('--sigma_v', type=float, default=0.0,
                         help='noise std in the latent process')
@@ -89,6 +89,8 @@ def get_parameters():
                         help='do not apply localization')
     parser.add_argument('--st_output_dim', type=int, default=64,
                         help='dimension of set transformer output')
+    parser.add_argument('--st_num_seeds', type=int, default=16,
+                        help='number of seeds in PMA layer')
     parser.add_argument('--st_type', type=str, default='joint', choices=['state_only', 'separate', 'joint'],
         help=(
             'Specifies how the Set Transformer is applied to distributions. '
@@ -110,6 +112,9 @@ def get_parameters():
                         help='Number of epoch between save and test')
     parser.add_argument('--trail', type=str, default="",
                         help='trail name')
+    parser.add_argument('--zero_infl', action='store_true',
+                        help='set inflation to zero')
+    
 
     # optimization setting
     parser.add_argument('--learning_rate', type=float_or_default, default='default',
@@ -182,6 +187,9 @@ def get_parameters():
         
     if args.test_batch_size == 'default':
         args.test_batch_size = args.test_traj_num
+        
+    if args.sigma_ens == 'default':
+        args.sigma_ens = DATASET_INFO[args.dataset]['sigma_ens']
     
     args.ori_dim = DATASET_INFO[args.dataset]['dim']
     args.obs_dim = DATASET_INFO[args.dataset]['obs_dim']

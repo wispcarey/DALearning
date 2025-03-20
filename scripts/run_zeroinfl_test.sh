@@ -50,7 +50,8 @@ for N in 5 10 15 20 40 60 100; do
         --N $N \
         --sigma_y $sigma_y \
         --seed $seed \
-        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth
+        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth \
+        --zero_infl
 done
 
 sigma_y=0.7
@@ -64,7 +65,8 @@ for N in 5 10 15 20 40 60 100; do
         --N $N \
         --sigma_y $sigma_y \
         --seed $seed \
-        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth
+        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth \
+        --zero_infl
 done
 
 # ks
@@ -81,7 +83,8 @@ for N in 5 10 15 20 40 60 100; do
         --N $N \
         --sigma_y $sigma_y \
         --seed $seed \
-        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth
+        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth \
+        --zero_infl
 done
 
 sigma_y=0.7
@@ -96,6 +99,7 @@ for N in 5 10 15 20 40 60 100; do
         --N $N \
         --sigma_y $sigma_y \
         --seed $seed \
-        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth
+        --cp_load_path save/${save_dir}/ft_cp_${N}_20.pth \
+        --zero_infl
 done
 
