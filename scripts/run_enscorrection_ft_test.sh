@@ -41,7 +41,8 @@ dataset="lorenz96"
 
 sigma_y=1
 seed=42
-save_dir="2024-12-09_14-55lorenz96_1.0_20_60_8192_EnST_tuned_joint"
+# save_dir="2024-12-09_14-55lorenz96_1.0_20_60_8192_EnST_tuned_joint"
+save_dir="2025-03-24_10-19lorenz96_1.0_20_60_8192_EnST_tuned_joint"
 
 # sigma_y = $sigma_y, EnST
 for N in 5 10 15 20 40 60 100; do

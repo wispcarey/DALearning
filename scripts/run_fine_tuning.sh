@@ -31,8 +31,8 @@ cd ..
 
 # # Lorenz 96
 python finetune_enscorrection_set_transformer_local.py \
-    --epochs 50 \
-    --save_epoch 5 \
+    --epochs 20 \
+    --save_epoch 20 \
     --dataset lorenz96 \
     --train_steps 60 \
     --train_traj_num 8192 \
