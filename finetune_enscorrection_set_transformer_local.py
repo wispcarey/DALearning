@@ -445,7 +445,7 @@ if __name__ == "__main__":
         model_list = [model, infl_model, local_model, st_model1, st_model2]
         total_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list)
         print(f'Total number of parameters: {total_params}')
-        ft_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list[1:3])
+        ft_params = sum(sum(p.numel() for p in model.parameters()) for model in model_list[:3])
         print(f'Fine-tuning parameters: {ft_params}')
 
 
@@ -477,8 +477,8 @@ if __name__ == "__main__":
                     param.requires_grad = False
                 for param in st_model2.parameters():
                     param.requires_grad = False
-                for param in model.parameters():
-                    param.requires_grad = False
+                # for param in model.parameters():
+                #     param.requires_grad = False
             for name, param in model_list[0].named_parameters():
                 print(f"Model: model, Parameter: {name}, Requires gradient: {param.requires_grad}")
             for name, param in model_list[1].named_parameters():

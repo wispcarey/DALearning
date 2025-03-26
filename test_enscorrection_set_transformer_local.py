@@ -156,123 +156,127 @@ def test_model(loader, model_list, args, infl=1, H_info=None):
             
             # Loss functions
             # absolute rmse
-            rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)) 
+            rmse_tensor = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)), dim=0)
+            rms_tensor = torch.mean(torch.sqrt(torch.mean((batch_v) ** 2, dim=2)), dim=0)
+            rrmse_tensor = rmse_tensor / rms_tensor
             # relative rmse
             # rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)) / torch.sqrt(torch.mean((batch_v) ** 2, dim=2))
-            rmv_tensor = torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3)))
+            rmv_tensor = torch.mean(torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3))),dim=0)
             
             if batch_ind == 0:
-                rmse_tensor_all, rmv_tensor_all = rmse_tensor, rmv_tensor
+                rmse_tensor_all, rmv_tensor_all, rrmse_tensor_all = rmse_tensor, rmv_tensor, rrmse_tensor
             else:
                 # Concatenate tensors along the first dimension
-                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor), dim=0)
-                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor), dim=0)
+                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor))
+                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor))
+                rrmse_tensor_all = torch.cat((rrmse_tensor_all, rrmse_tensor))
         
         # non-nan trajs
-        nan_mask = torch.isnan(rmse_tensor_all).any(dim=0)  
+        nan_mask = torch.isnan(rrmse_tensor_all) 
         valid_B_mask = ~nan_mask
-            
-        mean_rmse, std_rmse = get_mean_std(torch.mean(rmse_tensor_all[:, valid_B_mask], dim=0))
-        mean_rmv, std_rmv = get_mean_std(torch.mean(rmv_tensor_all[:, valid_B_mask], dim=0))
+        
+        mean_rrmse, std_rrmse = get_mean_std(rrmse_tensor_all[valid_B_mask])
+        mean_rmse, std_rmse = get_mean_std(rmse_tensor_all[valid_B_mask])
+        mean_rmv, std_rmv = get_mean_std(rmv_tensor_all[valid_B_mask])
         
         no_nan_percent = torch.sum(valid_B_mask) / args.test_traj_num
 
-    return mean_rmse, std_rmse, mean_rmv, std_rmv, no_nan_percent, loc_tensor
+    return mean_rmse, std_rmse, mean_rmv, std_rmv, mean_rrmse, std_rrmse, no_nan_percent, loc_tensor
 
 
-def test_SequentialEnKF(loader, args, infl=1, H_info=None, localization=False):
-    m = args.N
+# def test_SequentialEnKF(loader, args, infl=1, H_info=None, localization=False):
+#     m = args.N
     
-    if args.dataset == "lorenz63":
-        forward_fun = L63.forward
-    elif args.dataset == "lorenz96":
-        forward_fun = L96.forward
-    elif args.dataset == "ks":
-        forward_fun = etd_rk4_wrapper(device = args.device, dt = args.dt / args.dt_iter)
-    else:
-        raise NotImplementedError
+#     if args.dataset == "lorenz63":
+#         forward_fun = L63.forward
+#     elif args.dataset == "lorenz96":
+#         forward_fun = L96.forward
+#     elif args.dataset == "ks":
+#         forward_fun = etd_rk4_wrapper(device = args.device, dt = args.dt / args.dt_iter)
+#     else:
+#         raise NotImplementedError
 
-    if H_info is None:
-        H_fun, H = mystery_operator((args.ori_dim, args.obs_dim), args.device)
-    else:
-        H_fun, H = H_info
+#     if H_info is None:
+#         H_fun, H = mystery_operator((args.ori_dim, args.obs_dim), args.device)
+#     else:
+#         H_fun, H = H_info
     
-    if args.no_localization:
-        Lvy = torch.ones_like(args.Lvy)
-        Lyy = torch.ones_like(args.Lyy)
-    else:
-        Lvy = dist2coeff(args.Lvy, radius=4)
-        Lyy = dist2coeff(args.Lyy, radius=4)
+#     if args.no_localization:
+#         Lvy = torch.ones_like(args.Lvy)
+#         Lyy = torch.ones_like(args.Lyy)
+#     else:
+#         Lvy = dist2coeff(args.Lvy, radius=4)
+#         Lyy = dist2coeff(args.Lyy, radius=4)
 
-    with torch.no_grad():
-        for batch_ind, batch_v in enumerate(loader):
-            batch_v = batch_v.to(device=args.device)
+#     with torch.no_grad():
+#         for batch_ind, batch_v in enumerate(loader):
+#             batch_v = batch_v.to(device=args.device)
 
-            # Sample from prior
-            ens_v_a = batch_v[0].unsqueeze(1).repeat(1, m, 1)
-            ens_v_a = ens_v_a + torch.randn_like(ens_v_a, device=args.device) * args.sigma_ens
+#             # Sample from prior
+#             ens_v_a = batch_v[0].unsqueeze(1).repeat(1, m, 1)
+#             ens_v_a = ens_v_a + torch.randn_like(ens_v_a, device=args.device) * args.sigma_ens
 
-            # Store everything
-            ens_list = [ens_v_a]
-            K_list = []
+#             # Store everything
+#             ens_list = [ens_v_a]
+#             K_list = []
 
-            # Iterate over timesteps in batch
-            for i in range(len(batch_v) - 1):
-                t_start = time.time()
-                # get next observation
-                obs_y = H_fun(batch_v[i + 1].unsqueeze(1))
-                obs_y += args.sigma_y * torch.randn_like(obs_y, device=args.device)
+#             # Iterate over timesteps in batch
+#             for i in range(len(batch_v) - 1):
+#                 t_start = time.time()
+#                 # get next observation
+#                 obs_y = H_fun(batch_v[i + 1].unsqueeze(1))
+#                 obs_y += args.sigma_y * torch.randn_like(obs_y, device=args.device)
 
-                # forecast step
-                ens_v_a = ens_v_a.view(-1, args.ori_dim)
-                for j in range(args.dt_iter):
-                    if args.dataset == 'ks':
-                        ens_v_a = forward_fun(ens_v_a, None, args.dt / args.dt_iter)
-                    else:
-                        ens_v_a = rk4(forward_fun, ens_v_a, i * args.dt + j * args.dt / args.dt_iter,
-                                  args.dt / args.dt_iter)
-                ens_v_f = ens_v_a.view(-1, m, args.ori_dim)
+#                 # forecast step
+#                 ens_v_a = ens_v_a.view(-1, args.ori_dim)
+#                 for j in range(args.dt_iter):
+#                     if args.dataset == 'ks':
+#                         ens_v_a = forward_fun(ens_v_a, None, args.dt / args.dt_iter)
+#                     else:
+#                         ens_v_a = rk4(forward_fun, ens_v_a, i * args.dt + j * args.dt / args.dt_iter,
+#                                   args.dt / args.dt_iter)
+#                 ens_v_f = ens_v_a.view(-1, m, args.ori_dim)
                 
-                B, N, D = ens_v_f.shape
+#                 B, N, D = ens_v_f.shape
 
-                # add forward noise
-                ens_v_f = ens_v_f + torch.randn_like(ens_v_f, device=args.device) * args.sigma_v 
+#                 # add forward noise
+#                 ens_v_f = ens_v_f + torch.randn_like(ens_v_f, device=args.device) * args.sigma_v 
                 
-                ens_yo = H_fun(ens_v_f)
-                if localization:
-                    ens_v_a, K = loc_EnKF_analysis(ens_v_f, ens_yo, obs_y, args.sigma_y, Lvy, Lyy, a_method="PertObs")
-                else:
-                    ens_v_a, K = EnKF_analysis(ens_v_f, ens_yo, obs_y, args.sigma_y, a_method="PertObs")
-                ens_v_a = post_process(ens_v_a, infl=infl)
+#                 ens_yo = H_fun(ens_v_f)
+#                 if localization:
+#                     ens_v_a, K = loc_EnKF_analysis(ens_v_f, ens_yo, obs_y, args.sigma_y, Lvy, Lyy, a_method="PertObs")
+#                 else:
+#                     ens_v_a, K = EnKF_analysis(ens_v_f, ens_yo, obs_y, args.sigma_y, a_method="PertObs")
+#                 ens_v_a = post_process(ens_v_a, infl=infl)
 
-                ens_list.append(ens_v_a)
-                K_list.append(K)
-            # Concat outputs
-            ens_tensor = torch.stack(ens_list)
-            K_tensor = torch.stack(K_list)
-            loc_tensor = torch.unique(torch.cat((Lvy.flatten(), Lyy.flatten())))
+#                 ens_list.append(ens_v_a)
+#                 K_list.append(K)
+#             # Concat outputs
+#             ens_tensor = torch.stack(ens_list)
+#             K_tensor = torch.stack(K_list)
+#             loc_tensor = torch.unique(torch.cat((Lvy.flatten(), Lyy.flatten())))
 
-            # Loss functions
-            rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2))
-            rmv_tensor = torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3)))
+#             # Loss functions
+#             rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2))
+#             rmv_tensor = torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3)))
         
-            if batch_ind == 0:
-                rmse_tensor_all, rmv_tensor_all = rmse_tensor, rmv_tensor
-            else:
-                # Concatenate tensors along the first dimension
-                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor), dim=0)
-                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor), dim=0)
+#             if batch_ind == 0:
+#                 rmse_tensor_all, rmv_tensor_all = rmse_tensor, rmv_tensor
+#             else:
+#                 # Concatenate tensors along the first dimension
+#                 rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor), dim=0)
+#                 rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor), dim=0)
             
-        # non-nan trajs
-        nan_mask = torch.isnan(rmse_tensor_all).any(dim=0)  
-        valid_B_mask = ~nan_mask
+#         # non-nan trajs
+#         nan_mask = torch.isnan(rmse_tensor_all).any(dim=0)  
+#         valid_B_mask = ~nan_mask
             
-        mean_rmse, std_rmse = get_mean_std(torch.mean(rmse_tensor_all[:, valid_B_mask], dim=0))
-        mean_rmv, std_rmv = get_mean_std(torch.mean(rmv_tensor_all[:, valid_B_mask], dim=0))
+#         mean_rmse, std_rmse = get_mean_std(torch.mean(rmse_tensor_all[:, valid_B_mask], dim=0))
+#         mean_rmv, std_rmv = get_mean_std(torch.mean(rmv_tensor_all[:, valid_B_mask], dim=0))
         
-        no_nan_percent = torch.sum(valid_B_mask) / args.test_traj_num
+#         no_nan_percent = torch.sum(valid_B_mask) / args.test_traj_num
 
-    return mean_rmse, std_rmse, mean_rmv, std_rmv, no_nan_percent
+#     return mean_rmse, std_rmse, mean_rmv, std_rmv, no_nan_percent
 
 
 if __name__ == "__main__":
@@ -369,13 +373,20 @@ if __name__ == "__main__":
         # test
         print("Test NN Results")
         loss_list_nn = []
-        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, no_nan_percent_nn, loc_tensor = test_model(test_loader, model_list, args, H_info=H_info)
+        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
+            test_model(test_loader, model_list, args, H_info=H_info)
         print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
+        print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
         print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
         print(f'No NAN Percentage: {no_nan_percent_nn * 100: .2f}%')
-
-        loc_mean = torch.mean(loc_tensor, dim=(0,1)) 
-        loc_std = torch.std(loc_tensor, dim=(0,1)) 
+        
+        if args.no_localization:
+            loc_mean = loc_tensor
+            loc_std = loc_tensor
+        else:
+            loc_mean = torch.mean(loc_tensor, dim=(0,1)) 
+            loc_std = torch.std(loc_tensor, dim=(0,1)) 
+            
         # save results
         tensor_dict = {
             # 'enkf':{
@@ -388,6 +399,8 @@ if __name__ == "__main__":
             'nn':{
                 'mean_rmse':mean_rmse_nn,
                 'std_rmse':std_rmse_nn,
+                'mean_rrmse':mean_rrmse_nn,
+                'std_rrmse':std_rrmse_nn,
                 'mean_rmv':mean_rmv_nn,
                 'std_rmv':std_rmv_nn,
                 'valid_percent':no_nan_percent_nn,
