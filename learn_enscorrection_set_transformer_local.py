@@ -128,7 +128,7 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
                 K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) 
                 K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) + R * (N - 1)
             else:
-                loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
+                loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * args.loc_max_val
                 loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
                 loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
                 
@@ -321,7 +321,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                     K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn)
                     K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) + R * (N - 1)
                 else:
-                    loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
+                    loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * args.loc_max_val
                     loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
                     loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
                     

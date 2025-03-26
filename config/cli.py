@@ -101,6 +101,8 @@ def get_parameters():
     )
     parser.add_argument('--unfreeze_WQ', action='store_true',
                         help='unfreeze Q weights in the PMA layer')
+    parser.add_argument('--loc_max_val', type=float, default=2,
+                        help='max value of the localization weights')
 
 
     

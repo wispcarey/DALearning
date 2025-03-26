@@ -128,7 +128,7 @@ def test_model(loader, model_list, args, infl=1, H_info=None):
                     loc_mat_vy = torch.ones(B, D, d, device=args.device)
                     loc_mat_yy = torch.ones(B, d, d, device=args.device)
                 else:
-                    loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * 2
+                    loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * args.loc_max_val
                     loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
                     loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
                     loc_records.append(loc_nn_output)
