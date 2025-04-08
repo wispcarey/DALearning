@@ -144,6 +144,7 @@ def get_parameters():
     parser.add_argument('--seed', type=str, default=None, help='Random Seed')
     parser.add_argument('--test_only', action='store_true', help='Only do the test part')
     parser.add_argument('--test_rounds', type=int, default=1, help='Number of test rounds when selecting --test_only')
+    parser.add_argument('--GPU_memory', type=int, default=16, help='GPU memory in GB')
 
     args = parser.parse_args()
 
@@ -208,6 +209,9 @@ def get_parameters():
     else:
         args.use_data_parallel = False
         print(f"Do not Use DataParallel")
+        
+    if args.GPU_memory != 16:
+        args.batch_size = args.batch_size * int(args.GPU_memory / 16)
     
     if args.print_batch == "auto":
         args.print_batch = math.ceil(args.train_traj_num / args.batch_size)
