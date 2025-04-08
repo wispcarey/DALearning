@@ -83,7 +83,7 @@ def get_parameters():
                         help='test batch size')
     parser.add_argument('--detach_training_epoch', type=int, default=10000,
                         help='detach training epochs')
-    parser.add_argument('--loss_type', type=str, default="normalized_l2", choices=["l2", "normalized_l2", "rmse"],
+    parser.add_argument('--loss_type', type=str, default="normalized_l2", choices=["l2", "normalized_l2", "rmse", "crps"],
                         help='the type of loss function')
     parser.add_argument('--no_localization', action='store_true',
                         help='do not apply localization')

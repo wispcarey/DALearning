@@ -34,14 +34,14 @@ ENSEMBLE_SIZE = [5, 10, 15, 20, 40, 60, 100]
 
 DATASET_FOLDERS = {
     'lorenz63': [
-        "2024-12-06_12-23lorenz63_1.0_20_60_8192_EnST_tuned_joint",
-        "2024-12-09_13-38lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-31_13-57lorenz63_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-31_14-15lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
     'lorenz96': [
-        "2024-12-09_14-55lorenz96_1.0_20_60_8192_EnST_tuned_joint",
-        "2024-12-09_15-26lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-26_15-32lorenz96_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-26_16-42lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
     'ks': [
-        "2025-02-21_11-24ks_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-02-21_12-23ks_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-26_17-13ks_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-26_18-15ks_0.7_20_60_8192_EnST_tuned_joint"],
 }
 
 TEST_DATA = {
@@ -205,7 +205,7 @@ def plot_gc_and_curves(A, B, save_dir='../save/figures'):
     
     return output_files
 
-def create_combined_grid(ens_list, save_dir='../save/figures', add_ticks=True):
+def create_combined_grid(dataset, ens_list, save_dir='../save/figures', add_ticks=True):
     """
     Create a combined grid of plots for the specified ensemble sizes.
     Add ticks to the outer edges of the combined grid.
@@ -258,7 +258,7 @@ def create_combined_grid(ens_list, save_dir='../save/figures', add_ticks=True):
     
     if not add_ticks:
         # Without ticks, just save the PIL combined image
-        combined_path = os.path.join(save_dir, f"combined_loc_grid_{'_'.join(map(str, ens_list))}.png")
+        combined_path = os.path.join(save_dir, f"{dataset}_loc_grid_{'_'.join(map(str, ens_list))}.png")
         combined_img.save(combined_path)
     else:
         # Add ticks using matplotlib
@@ -307,11 +307,9 @@ def create_combined_grid(ens_list, save_dir='../save/figures', add_ticks=True):
         plt.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
         
         # Save combined image with ticks
-        combined_path = os.path.join(save_dir, f"combined_loc_grid_ticks_{'_'.join(map(str, ens_list))}.png")
-        plt.savefig(combined_path, dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, f"{dataset}_loc_grid_{'_'.join(map(str, ens_list))}.png"), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(save_dir, f"{dataset}_loc_grid_{'_'.join(map(str, ens_list))}.pdf"), dpi=300, bbox_inches='tight')
         plt.close(fig)
-    
-    return combined_path
 
 def plot_results_all(args):
     """
@@ -331,7 +329,7 @@ def plot_results_all(args):
     plot_gc_and_curves(nn_results, benchmark_results)
     
     # Create combined grid for selected ensemble sizes
-    create_combined_grid(args.ensemble_sizes)
+    create_combined_grid(args.dataset, args.ensemble_sizes)
 
 
 if __name__ == "__main__":
@@ -361,11 +359,11 @@ if __name__ == "__main__":
     # Run the main function
     plot_results_all(args)
     
-    # If specific ensemble sizes were provided, create a custom combined grid
-    if args.ensemble_sizes:
-        valid_sizes = [size for size in args.ensemble_sizes if size in ENSEMBLE_SIZE]
-        if valid_sizes:
-            print(f"Creating combined grid for ensemble sizes: {valid_sizes}")
-            create_combined_grid(valid_sizes)
-        else:
-            print(f"Warning: None of the provided ensemble sizes {args.ensemble_sizes} are valid. Must be from {ENSEMBLE_SIZE}")
+    # # If specific ensemble sizes were provided, create a custom combined grid
+    # if args.ensemble_sizes:
+    #     valid_sizes = [size for size in args.ensemble_sizes if size in ENSEMBLE_SIZE]
+    #     if valid_sizes:
+    #         print(f"Creating combined grid for ensemble sizes: {valid_sizes}")
+    #         create_combined_grid(args.dataset, valid_sizes)
+    #     else:
+    #         print(f"Warning: None of the provided ensemble sizes {args.ensemble_sizes} are valid. Must be from {ENSEMBLE_SIZE}")

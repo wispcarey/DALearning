@@ -35,14 +35,14 @@ ENSEMBLE_SIZE = [5,10,15,20,40,60,100]
 
 DATASET_FOLDERS = {
     'lorenz63': [
-        "2024-12-06_12-23lorenz63_1.0_20_60_8192_EnST_tuned_joint",
-        "2024-12-09_13-38lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-31_13-57lorenz63_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-31_14-15lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
     'lorenz96': [
-        "2024-12-09_14-55lorenz96_1.0_20_60_8192_EnST_tuned_joint",
-        "2024-12-09_15-26lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-26_15-32lorenz96_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-26_16-42lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
     'ks': [
-        "2025-02-21_11-24ks_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-02-21_12-23ks_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-03-26_17-13ks_1.0_20_60_8192_EnST_tuned_joint",
+        "2025-03-26_18-15ks_0.7_20_60_8192_EnST_tuned_joint"],
 }
 
 TEST_DATA = {
@@ -52,7 +52,7 @@ TEST_DATA = {
 }
 
 COLOR_DICT = {
-    'Normal Infl': "blue",
+    'Trained Infl': "blue",
     'No Infl': "red",
 }
 
@@ -65,28 +65,24 @@ def replace_nan_with_value(nparray, value=6):
 def collect_results(args):
     folder_list = DATASET_FOLDERS[args.dataset]
     
-    results = np.zeros((2, len(ENSEMBLE_SIZE), 5), dtype=float)
+    results = np.zeros((2, len(ENSEMBLE_SIZE), 3), dtype=float)
     nn_results = {}
     
     for i in range(2):
         for j, N in enumerate(ENSEMBLE_SIZE):
             data_dic = torch.load(f'../save/{folder_list[i]}/output_records_{N}.pt', weights_only=True)
-            results[i, j, 0] = data_dic['nn']['mean_rmse']
-            results[i, j, 1] = data_dic['nn']['std_rmse']
-            results[i, j, 2] = data_dic['nn']['mean_rmv']
-            results[i, j, 3] = data_dic['nn']['std_rmv']
-            results[i, j, 4] = data_dic['nn']['valid_percent'] < 1
+            results[i, j, 0] = data_dic['nn']['mean_rrmse']
+            results[i, j, 1] = data_dic['nn']['std_rrmse']
+            results[i, j, 2] = data_dic['nn']['valid_percent'] < 1
     
-    nn_results['Normal Infl'] = results.copy()
+    nn_results['Trained Infl'] = results.copy()
     
     for i in range(2):
         for j, N in enumerate(ENSEMBLE_SIZE):
             data_dic = torch.load(f'../save/{folder_list[i]}/output_records_zero_infl_{N}.pt', weights_only=True)
-            results[i, j, 0] = data_dic['nn']['mean_rmse']
-            results[i, j, 1] = data_dic['nn']['std_rmse']
-            results[i, j, 2] = data_dic['nn']['mean_rmv']
-            results[i, j, 3] = data_dic['nn']['std_rmv']
-            results[i, j, 4] = data_dic['nn']['valid_percent'] < 1
+            results[i, j, 0] = data_dic['nn']['mean_rrmse']
+            results[i, j, 1] = data_dic['nn']['std_rrmse']
+            results[i, j, 2] = data_dic['nn']['valid_percent'] < 1
     
     nn_results['No Infl'] = results.copy()
     
@@ -94,30 +90,19 @@ def collect_results(args):
         
 
 def plot_results_all(args):
-    if args.rrmse:
-        print("Use the relative metric = rmse/rms")
-        test_traj = np.load(TEST_DATA[args.dataset])
-        RMS = np.mean(np.sqrt(np.mean(test_traj ** 2, axis=2)))
-        print("RMS:", RMS)
     
     x_inds = ENSEMBLE_SIZE
     
     nn_results_all = collect_results(args)
     
-    titles = [f"{args.dataset.upper()}:"+r"$\sigma_y=1$; RMSE Mean $\pm$ 1std", 
-            f"{args.dataset.upper()}:"+r"$\sigma_y=1$; RMV Mean $\pm$ 1std",
-            f"{args.dataset.upper()}:"+r"$\sigma_y=0.7$; RMSE Mean $\pm$ 1std",
-            f"{args.dataset.upper()}:"+r"$\sigma_y=0.7$; RMV Mean $\pm$ 1std"]
-    if args.rrmse:
-        y_labels = ["RRMSE", "RRMSE"]
-    else:
-        y_labels = ["RMSE", "RMSE"]
-    save_figure_suffix = ["RMSE_10", "RMSE_07"]
+    titles = [f"{args.dataset.upper()}:"+r"$\sigma_y=1$; R-RMSE Mean $\pm$ 1std", 
+            f"{args.dataset.upper()}:"+r"$\sigma_y=0.7$; R-RMSE Mean $\pm$ 1std"]
+    y_labels = ["R-RMSE", "R-RMSE"]
+
+    save_figure_suffix = ["R_RMSE_10", "R_RMSE_07"]
     
-    fig1 = plt.figure(1, figsize=(12, 6)) 
-    fig2 = plt.figure(2, figsize=(12, 6)) 
-    # fig3 = plt.figure(3, figsize=(12, 6))
-    # fig4 = plt.figure(4, figsize=(12, 6))
+    fig1 = plt.figure(1, figsize=(14, 6)) 
+    fig2 = plt.figure(2, figsize=(14, 6)) 
     value_max = 0 * np.ones(2)
     value_min = 100 * np.ones(2)
     
@@ -133,35 +118,24 @@ def plot_results_all(args):
         print("min val:", min_val)
         value_min = np.minimum(min_val, value_min)
                 
-        mean_rmse_1, std_rmse_1, mean_rmv_1, std_rmv_1, nan_exists_1 = value[0, :, 0], value[0, :, 1], value[0, :, 2], value[0, :, 3], value[0, :, 4]
+        mean_rmse_1, std_rmse_1 = value[0, :, 0], value[0, :, 1]
         mean_rmse_record["10"] = mean_rmse_1
-        
-        if args.rrmse:
-            mean_rmse_1, std_rmse_1, mean_rmv_1, std_rmv_1 = mean_rmse_1 / RMS, std_rmse_1 / RMS, mean_rmv_1 / RMS, std_rmv_1 / RMS
         
         print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=1$:", mean_rmse_1)
 
         plt.figure(1)
         plt.errorbar(x_inds, mean_rmse_1, yerr=std_rmse_1,
             linestyle='-', capsize=3, capthick=2, color=COLOR_DICT[key], marker='D', linewidth=2, alpha=0.75, label=f"{key}")
-        # for x, y, is_star in zip(x_inds, mean_rmv_1, nan_exists_1):
-        #     marker = "*" if is_star else "D"
-        #     plt.scatter(x, y, marker=marker, color=COLOR_DICT[key], s=50)
         
-        mean_rmse_07, std_rmse_07, mean_rmv_07, std_rmv_07, nan_exists_07 = value[1, :, 0], value[1, :, 1], value[1, :, 2], value[1, :, 3], value[1, :, 4]
+        mean_rmse_07, std_rmse_07 = value[1, :, 0], value[1, :, 1]
         mean_rmse_record["07"] = mean_rmse_07
         
-        if args.rrmse:
-            mean_rmse_07, std_rmse_07, mean_rmv_07, std_rmv_07 = mean_rmse_07 / RMS, std_rmse_07 / RMS, mean_rmv_07 / RMS, std_rmv_07 / RMS
         
         print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=0.7$:", mean_rmse_07)
 
         plt.figure(2)
         plt.errorbar(x_inds, mean_rmse_07, yerr=std_rmse_07,
             linestyle='-', capsize=3, capthick=2, color=COLOR_DICT[key], marker='D', linewidth=2, alpha=0.75, label=f"{key}")
-        # for x, y, is_star in zip(x_inds, mean_rmv_07, nan_exists_07):
-        #     marker = "*" if is_star else "D"
-        #     plt.scatter(x, y, marker=marker, color=COLOR_DICT[key], s=50)
         
         mean_rmse_dict[key] = mean_rmse_record
             
@@ -170,52 +144,40 @@ def plot_results_all(args):
     for i in range(2):
         plt.figure(i+1)
 
-        if args.rrmse:
-            if args.dataset == 'lorenz63':
-                ticksize = 0.02
-            else:
-                ticksize = 0.25
-        else:
-            ticksize = 0.5
+        ticksize = 0.2
             
-        if args.rrmse:
-            vmax = value_max[i] / RMS
-            vmin = value_min[i] / RMS
-        else:
-            vmax = value_max[i]
-            vmin = value_min[i]
+        vmax = value_max[i]
+        vmin = value_min[i]
 
         y_ticks = list(np.arange(int(vmin / ticksize) * ticksize, vmax + ticksize, ticksize))
-        print(vmax,vmin)
-        new_y_ticks = y_ticks
+        new_y_ticks = [f"{y:.2f}".rstrip('0').rstrip('.') if '.' in f"{y:.2f}" else f"{y}" for y in y_ticks]
             
         plt.yticks(ticks=y_ticks, labels=new_y_ticks)
         plt.legend(loc='upper right')
+        # plt.legend(bbox_to_anchor=(1, 1), loc='upper left')
         plt.title(titles[i])
         plt.xlabel("Ensemble Size")
         plt.ylabel(y_labels[i])
         plt.xticks(ENSEMBLE_SIZE)
         plt.grid(True)
         
-        if args.rrmse:
-            suffix = '_R'
-        else:
-            suffix = ''
-        plt.savefig(os.path.join('../save/figures', f"{args.dataset}_{save_figure_suffix[i]}_infl_{suffix}.png"), bbox_inches="tight", dpi=200)
+        plt.savefig(os.path.join('../save/figures', f"{args.dataset}_{save_figure_suffix[i]}_infl.png"), bbox_inches="tight", dpi=200)
+        plt.savefig(os.path.join('../save/figures', f"{args.dataset}_{save_figure_suffix[i]}_infl.pdf"), bbox_inches="tight", dpi=200)
         print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_{save_figure_suffix[i]}.png"))
         plt.close()  
     
     # Relative improvement plot
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(14, 6))
 
     # Calculate relative improvement
-    relative_imp_1 = np.abs(mean_rmse_dict['Normal Infl']['10'] - mean_rmse_dict['No Infl']['10']) / mean_rmse_dict['Normal Infl']['10']
-    relative_imp_07 = np.abs(mean_rmse_dict['Normal Infl']['07'] - mean_rmse_dict['No Infl']['07']) / mean_rmse_dict['Normal Infl']['07']
+    relative_imp_1 = np.abs(mean_rmse_dict['Trained Infl']['10'] - mean_rmse_dict['No Infl']['10']) / mean_rmse_dict['Trained Infl']['10']
+    relative_imp_07 = np.abs(mean_rmse_dict['Trained Infl']['07'] - mean_rmse_dict['No Infl']['07']) / mean_rmse_dict['Trained Infl']['07']
     # Plot relative improvement
     plt.plot(x_inds, relative_imp_1, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"$\sigma_y=1$")
     plt.plot(x_inds, relative_imp_07, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"$\sigma_y=0.7$")
     
     plt.legend(loc='upper right')
+    # plt.legend(bbox_to_anchor=(1, 1), loc='upper left')
 
     # Set x and y labels
     plt.xlabel("Ensemble Size")
@@ -225,7 +187,7 @@ def plot_results_all(args):
     plt.xticks([5, 10, 15, 20, 40, 60, 100])
 
     # Set y axis to start at 0 and format as percentage
-    # plt.gca().yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))  # Convert values to percentage format
+    plt.gca().yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))  # Convert values to percentage format
 
     if np.min(np.stack((relative_imp_1, relative_imp_07))) > 0:
         plt.gca().set_ylim(0, None)  # Ensure y-axis starts from 0
@@ -240,6 +202,7 @@ def plot_results_all(args):
 
     # Save the figure
     plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_Infl.png"), bbox_inches="tight", dpi=200)
+    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_Infl.pdf"), bbox_inches="tight", dpi=200)
     print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_Relative_Imp.png"))
     plt.close()
 
@@ -258,11 +221,6 @@ if __name__ == "__main__":
         choices=["ks", "lorenz96", "lorenz63"], 
         default="lorenz96", 
         help="Specify the dataset to process. Options: 'ks', 'lorenz96', 'lorenz63'. Default is 'lorenz96'."
-    )
-    parser.add_argument(
-        "--rrmse", 
-        action="store_true",
-        help="Use relative rmse = rmse/rms"
     )
 
     

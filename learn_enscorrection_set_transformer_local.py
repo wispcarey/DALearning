@@ -12,11 +12,12 @@ from config.dataset_info import DATASET_INFO
 
 from utils import plot_results_2d, setup_optimizer_and_scheduler, save_checkpoint, load_checkpoint
 from utils import L63, L96, rk4, etd_rk4_wrapper
-from utils import AverageMeter, mystery_operator, partial_obs_operator, get_dataloader, batch_covariance
+from utils import AverageMeter, mystery_operator, partial_obs_operator, get_dataloader, batch_covariance, get_mean_std
 from utils import redirect_output
 from EnKF_utils import StochasticENKF_analysis, loc_EnKF_analysis, EnKF_analysis, post_process, mrdiv, mean0
 from networks import ComplexAttentionModel, AttentionModel, NaiveNetwork, SetTransformer, Simple_MLP
 from localization import pairwise_distances, dist2coeff, create_loc_mat
+from loss import compute_loss
 
 
 def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=None):
@@ -168,16 +169,12 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
         if not valid_B_mask.any():
             num_all_nan_batch += 1
         else:
-            if args.loss_type == "l2":
-                loss = torch.mean((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:end_ind + 1, valid_B_mask, :]) ** 2)
-            elif args.loss_type == 'normalized_l2':
-                error_norm_2 = torch.sum((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:end_ind + 1, valid_B_mask, :]) ** 2, dim=2)
-                true_norm_2 = torch.sum(batch_v[ignore_first:end_ind + 1, valid_B_mask, :] ** 2, dim=2)
-                loss = torch.mean(error_norm_2 / true_norm_2)
-            elif args.loss_type == 'rmse':
-                loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2)[ignore_first:, valid_B_mask, :] - batch_v[ignore_first:, valid_B_mask, :]) ** 2, dim=2)))
-            else:
-                raise NotImplementedError("loss_type is not implemented")
+            loss = compute_loss(ens_tensor=ens_tensor, 
+                                batch_v=batch_v, 
+                                loss_type=args.loss_type, 
+                                ignore_first=ignore_first, 
+                                end_ind=None, 
+                                valid_B_mask=valid_B_mask)
 
             success_count += torch.sum(valid_B_mask)
             
@@ -210,15 +207,10 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
     return losses.avg
 
 
-def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None):
-    # kalman_layer = KalmanFilterLayer.apply
-    
+def test_model(loader, model_list, args, infl=1, H_info=None):
     model, infl_model, local_model, st_model1, st_model2 = model_list
 
     m = args.N
-
-    losses = AverageMeter()
-    step_time = AverageMeter()
     
     if args.dataset == "lorenz63":
         forward_fun = L63.forward
@@ -238,10 +230,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
     # loc_mat_yy = dist2coeff(args.Lyy, radius=4).unsqueeze(0)
 
     with torch.no_grad():
-        success_count = 0
-        total_count = 0
-        num_all_nan_batch = 0
-        for batch_v in loader:
+        for batch_ind, batch_v in enumerate(loader):
             batch_v = batch_v.to(device=args.device)
 
             # Sample from prior
@@ -251,6 +240,7 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
             # Store everything
             ens_list = [ens_v_a]
             K_list = []
+            loc_records = []
 
             # Iterate over timesteps in batch
             for i in range(len(batch_v) - 1):
@@ -265,9 +255,8 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                     if args.dataset == 'ks':
                         ens_v_a = forward_fun(ens_v_a, None, args.dt / args.dt_iter)
                     else:
-                        
                         ens_v_a = rk4(forward_fun, ens_v_a, i * args.dt + j * args.dt / args.dt_iter,
-                                    args.dt / args.dt_iter)
+                                  args.dt / args.dt_iter)
                 ens_v_f = ens_v_a.view(-1, m, args.ori_dim)
                 
                 # add forward noise
@@ -275,6 +264,8 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
 
                 # preparation for individual ensemble data
                 hv = H_fun(ens_v_f)
+                
+                # ens_v_a, K = EnKF_analysis(ens_v_f, hv, obs_y, args.sigma_y, a_method="PertObs")
                 B, N, D = ens_v_f.shape
                 d = hv.shape[2]
                 
@@ -307,27 +298,33 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
                                         ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.input_dim)
                     local_nn_input = torch.cat([obs_y.squeeze(1), ens_nn_output], dim=-1)
                     infl_nn_input = torch.cat([ens_v_f, ens_nn_output.unsqueeze(1).expand(-1, N, -1)], dim=-1).view(-1, args.ori_dim + 2 * args.st_output_dim)
-
+                    
                 # execute model
                 nn_output = model(nn_input).view(hv.shape[0], hv.shape[1], -1)
                 infl_output = infl_model(infl_nn_input).view(B, N, -1)
-                Vnn1 = ens_v_f + infl_output
+                if args.zero_infl:
+                    Vnn1 = ens_v_f
+                else:
+                    Vnn1 = ens_v_f + infl_output
+                
+                # Vnn1 = ens_v_f
                 Vnn2 = ens_v_f - mean_ens_v_f + nn_output[:, :, :D]
                 Ynn = hv - mean_hv + nn_output[:, :, D:]
                 R = args.sigma_y ** 2 * torch.eye(d).unsqueeze(0).expand(B, -1, -1).to(args.device)
                 
                 # get localization matrices
                 if args.no_localization:
-                    K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn)
-                    K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) + R * (N - 1)
+                    loc_mat_vy = torch.ones(B, D, d, device=args.device)
+                    loc_mat_yy = torch.ones(B, d, d, device=args.device)
                 else:
                     loc_nn_output = torch.sigmoid(local_model(local_nn_input)) * args.loc_max_val
                     loc_mat_vy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lvy)
                     loc_mat_yy = create_loc_mat(loc_nn_output, args.diff_dist, args.Lyy)
-                    
-                    K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
-                    K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
+                    loc_records.append(loc_nn_output)
                 
+                # Kalman Gain
+                K1 = torch.bmm(Vnn2.transpose(1, 2), Ynn) * loc_mat_vy
+                K2 = torch.bmm(Ynn.transpose(1, 2), Ynn) * loc_mat_yy + R * (N - 1)
                 K = torch.bmm(K1, torch.inverse(K2))
                 ens_v_a = Vnn1 + torch.bmm(ens_i, K.transpose(1, 2))
                 
@@ -337,39 +334,43 @@ def test_model(loader, model_list, args, infl=1, verbose_test=True, H_info=None)
 
                 ens_list.append(ens_v_a)
                 K_list.append(K)
-                step_time.update(time.time() - t_start)
-                
+
             # Concat outputs
             ens_tensor = torch.stack(ens_list)
             K_tensor = torch.stack(K_list)
-
-            # remove nan batch indices
-            nan_mask = torch.isnan(ens_tensor).any(dim=(0, 2, 3))  
-            valid_B_mask = ~nan_mask
+            if args.no_localization:
+                loc_tensor = torch.empty(1)
+            else:
+                loc_tensor = torch.stack(loc_records)
             
             # Loss functions
-            if not valid_B_mask.any():
-                num_all_nan_batch += 1
-            else:
-                loss = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2)[:, valid_B_mask, :] - batch_v[:, valid_B_mask, :]) ** 2, dim=2)))
-                success_count += torch.sum(valid_B_mask)
-                losses.update(loss.item(), torch.sum(valid_B_mask))
+            # absolute rmse
+            rmse_tensor = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)), dim=0)
+            rms_tensor = torch.mean(torch.sqrt(torch.mean((batch_v) ** 2, dim=2)), dim=0)
+            rrmse_tensor = rmse_tensor / rms_tensor
+            # relative rmse
+            # rmse_tensor = torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)) / torch.sqrt(torch.mean((batch_v) ** 2, dim=2))
+            rmv_tensor = torch.mean(torch.sqrt(N / (N-1) * torch.mean((ens_tensor - batch_v.unsqueeze(2)) ** 2, dim=(2,3))),dim=0)
             
-            total_count += batch_v.shape[1]
+            if batch_ind == 0:
+                rmse_tensor_all, rmv_tensor_all, rrmse_tensor_all = rmse_tensor, rmv_tensor, rrmse_tensor
+            else:
+                # Concatenate tensors along the first dimension
+                rmse_tensor_all = torch.cat((rmse_tensor_all, rmse_tensor))
+                rmv_tensor_all = torch.cat((rmv_tensor_all, rmv_tensor))
+                rrmse_tensor_all = torch.cat((rrmse_tensor_all, rrmse_tensor))
         
-        if num_all_nan_batch == len(loader):
-            loss = torch.tensor(float('nan')).to(args.device)
-            losses.update(loss.item(), 1)
+        # non-nan trajs
+        nan_mask = torch.isnan(rrmse_tensor_all) 
+        valid_B_mask = ~nan_mask
+        
+        mean_rrmse, std_rrmse = get_mean_std(rrmse_tensor_all[valid_B_mask])
+        mean_rmse, std_rmse = get_mean_std(rmse_tensor_all[valid_B_mask])
+        mean_rmv, std_rmv = get_mean_std(rmv_tensor_all[valid_B_mask])
+        
+        no_nan_percent = torch.sum(valid_B_mask) / args.test_traj_num
 
-        if verbose_test:
-            print(f'Average Test RMSE: {losses.avg}\t'
-                  f'Average One-step Time: {step_time.avg}\t'
-                  f'No NAN Percentage: {success_count / total_count * 100: .2f}%\t'
-                  )
-            plot_results_2d(ens_tensor.mean(dim=2)[:, 0, :].cpu().numpy().T, batch_v[:, 0, :].cpu().numpy().T, 0, 499, 
-                            plot_inds=[0,1,2], save_path=os.path.join(args.save_folder, "EnKF_results.png"))
-
-        return losses.avg, step_time.avg, ens_tensor, K_tensor
+    return mean_rmse, std_rmse, mean_rmv, std_rmv, mean_rrmse, std_rrmse, no_nan_percent, loc_tensor
 
 
 if __name__ == "__main__":
@@ -394,9 +395,8 @@ if __name__ == "__main__":
         suffix = "_tuned"
     else:
         suffix = ""
-    folder_name = os.path.join("save",
-                               datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
-    folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_EnST{suffix}_{args.st_type}"
+    folder_name = os.path.join("save", datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
+    folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_{args.loss_type}_EnST{suffix}_{args.st_type}"
     if not os.path.isdir(folder_name):
         os.makedirs(folder_name)
     args.save_folder = folder_name
@@ -468,27 +468,44 @@ if __name__ == "__main__":
 
         # training
         train_loss_list = []
-        test_loss_list = []
+        test_rmse_list = []
+        test_rrmse_list = []
         test_epochs = []
         if args.test_only:
             print("Test Only")
-            loss_list_nn = []
+            rmse_list, rrmse_list = [], []
             for i in range(args.test_rounds):
-                loss_val, _, ens_tensor_nn, K_tensor_nn = test_model(test_loader, model_list, args, verbose_test=False, H_info=H_info)
-                loss_list_nn.append(loss_val)
-            print("Average RMSE:", torch.mean(torch.tensor(loss_list_nn)))
+                mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
+                        test_model(test_loader, model_list, args, H_info=H_info)
+                rmse_list.append(mean_rmse_nn)
+                rrmse_list.append(mean_rrmse_nn)
+            print("Average RMSE:", torch.mean(torch.tensor(rmse_list)))
+            print("Average R-RMSE:", torch.mean(torch.tensor(rrmse_list)))
         else:
             print("Training Start")
-            test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
-            test_loss_list.append(test_loss)
+            mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
+                        test_model(test_loader, model_list, args, H_info=H_info)
+            print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
+            print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
+            print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
+            print(f'No NAN Percentage: {no_nan_percent_nn * 100: .2f}%')
+            test_epochs.append(0)
+            test_rmse_list.append(mean_rmse_nn)
+            test_rrmse_list.append(mean_rrmse_nn)
             for epoch in range(1, 1 + args.epochs):
                 train_loss = train_model(epoch, train_loader, model_list, optimizer, scheduler, args, H_info=H_info)
                 train_loss_list.append(train_loss)
                 if epoch % args.save_epoch == 0:
-                    test_loss, _, _, _ = test_model(test_loader, model_list, args, verbose_test=True, H_info=H_info)
+                    mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
+                        test_model(test_loader, model_list, args, H_info=H_info)
+                    print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
+                    print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
+                    print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
+                    print(f'No NAN Percentage: {no_nan_percent_nn * 100: .2f}%')
                     test_epochs.append(epoch)
-                    test_loss_list.append(test_loss)
-                    train_records = {"train_loss": train_loss_list, "test_loss": test_loss_list, "test_epochs": test_epochs}
+                    test_rmse_list.append(mean_rmse_nn)
+                    test_rrmse_list.append(mean_rrmse_nn)
+                    train_records = {"train_loss": train_loss_list, "test_loss": test_rmse_list, "test_rrmse": test_rrmse_list, "test_epochs": test_epochs}
                     torch.save(train_records, os.path.join(folder_name, f"training_records.pt"))
                     save_checkpoint(model_list, optimizer, scheduler, filename=os.path.join(folder_name, f"cp_{epoch}.pth"))
 
