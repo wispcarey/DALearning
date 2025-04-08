@@ -613,26 +613,40 @@ def create_optimizer(model, args, apply_multiplier=False):
     # Create the optimizer based on whether it's SGD or AdamW
     if args.SGD:
         return SGD(parameters, lr=args.learning_rate,
-                   momentum=args.momentum, weight_decay=args.weight_decay)
+                momentum=args.momentum, weight_decay=args.weight_decay)
     else:
         if apply_multiplier:
             return AdamW(parameters, lr=args.learning_rate * 4,
-                         weight_decay=args.weight_decay)
+                        weight_decay=args.weight_decay)
         return AdamW(parameters, lr=args.learning_rate,
-                     weight_decay=args.weight_decay)
+                    weight_decay=args.weight_decay)
 
+
+# def combined_lr_scheduler(args):
+#     def lr_lambda(epoch):
+#         if epoch < args.warm_up_epochs:
+#             # Warm-up phase
+#             return args.warm_up_rate ** epoch
+#         else:
+#             # After warm-up, apply step decay
+#             decay_epochs = [int(e) for e in args.lr_decay_epochs.split(',')]
+#             decay_factor = sum([epoch >= e for e in decay_epochs])
+#             return args.warm_up_rate ** args.warm_up_epochs * (args.lr_decay_rate ** decay_factor)
+
+#     return lr_lambda
 
 def combined_lr_scheduler(args):
     def lr_lambda(epoch):
         if epoch < args.warm_up_epochs:
-            # Warm-up phase
-            return args.warm_up_rate ** epoch
+            # Exponential warm-up normalized to reach 1.0 at the end
+            base = args.warm_up_rate
+            normalized = base ** (epoch + 1) / base ** args.warm_up_epochs
+            return normalized
         else:
-            # After warm-up, apply step decay
+            # After warm-up: step decay
             decay_epochs = [int(e) for e in args.lr_decay_epochs.split(',')]
             decay_factor = sum([epoch >= e for e in decay_epochs])
-            return args.warm_up_rate ** args.warm_up_epochs * (args.lr_decay_rate ** decay_factor)
-
+            return args.lr_decay_rate ** decay_factor
     return lr_lambda
 
 

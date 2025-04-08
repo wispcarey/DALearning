@@ -131,8 +131,10 @@ def get_parameters():
                         help='momentum')
     parser.add_argument('--adjust_lr', action='store_true',
                         help='adjusting learning rate')
+    parser.set_defaults(adjust_lr=True) ### default adjust lr
     parser.add_argument('--warm_up', action='store_true',
                         help='adjusting learning rate')
+    parser.set_defaults(warm_up=True) ### default warm up
     parser.add_argument('--warm_up_rate', type=float, default=1.02,
                         help='warm-up rate')
     parser.add_argument('--warm_up_epochs', type=int, default=50,
@@ -186,7 +188,8 @@ def get_parameters():
         args.learning_rate = DATASET_INFO[args.dataset]['learning_rate']
     
     if args.batch_size == 'default':
-        args.batch_size = DATASET_INFO[args.dataset]['batch_size']
+        ori_batch_size = DATASET_INFO[args.dataset]['batch_size']
+        args.batch_size = ori_batch_size
         
     if args.test_batch_size == 'default':
         args.test_batch_size = args.test_traj_num
@@ -215,6 +218,14 @@ def get_parameters():
     
     if args.print_batch == "auto":
         args.print_batch = math.ceil(args.train_traj_num / args.batch_size)
-    
+        
+    if args.adjust_lr:
+        print("[INFO] Learning rate adjustment is ENABLED.")
 
+    if args.warm_up:
+        print("[INFO] Warm-up is ENABLED.")
+        
+    if ori_batch_size != args.batch_size:
+        args.learning_rate = args.learning_rate * (args.batch_size / ori_batch_size) ** 0.5
+    
     return args

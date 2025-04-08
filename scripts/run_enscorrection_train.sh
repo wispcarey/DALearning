@@ -7,15 +7,14 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 1 \
     --seed 42 \
-    --adjust_lr \
-    --loss_type crps
+    --loss_type crps \
+    --GPU_memory 32
 
 python learn_enscorrection_set_transformer_local.py \
     --dataset ks \
     --N 10 \
     --sigma_y 0.7 \
     --seed 42 \
-    --adjust_lr \
     --loss_type crps
 
 python learn_enscorrection_set_transformer_local.py \
@@ -24,7 +23,6 @@ python learn_enscorrection_set_transformer_local.py \
     --sigma_y 1 \
     --seed 1 \
     --no_localization \
-    --adjust_lr \
     --loss_type crps
 
 python learn_enscorrection_set_transformer_local.py \
@@ -33,7 +31,6 @@ python learn_enscorrection_set_transformer_local.py \
     --sigma_y 0.7 \
     --seed 1 \
     --no_localization \
-    --adjust_lr \
     --loss_type crps
 
 python learn_enscorrection_set_transformer_local.py \
@@ -41,7 +38,6 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 1 \
     --seed 42 \
-    --adjust_lr \
     --loss_type crps
 
 python learn_enscorrection_set_transformer_local.py \
@@ -49,7 +45,6 @@ python learn_enscorrection_set_transformer_local.py \
     --N 10 \
     --sigma_y 0.7 \
     --seed 42 \
-    --adjust_lr \
     --loss_type crps
 
 # python learn_enscorrection_set_transformer_local.py \
