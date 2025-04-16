@@ -34,15 +34,16 @@ ENSEMBLE_SIZE = [5, 10, 15, 20, 40, 60, 100]
 
 DATASET_FOLDERS = {
     'lorenz63': [
-        "2025-03-31_13-57lorenz63_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-31_14-15lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-11_12-18lorenz63_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_12-39lorenz63_0.7_20_60_8192_norm_EnST_tuned_joint"],
     'lorenz96': [
-        "2025-03-26_15-32lorenz96_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-26_16-42lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-11_12-59lorenz96_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_13-31lorenz96_0.7_20_60_8192_norm_EnST_tuned_joint"],
     'ks': [
-        "2025-03-26_17-13ks_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-26_18-15ks_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-11_14-02ks_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_15-09ks_0.7_20_60_8192_norm_EnST_tuned_joint"],
 }
+
 
 TEST_DATA = {
     'lorenz63': '../data/lorenz63/test_0_96000_v_0.150step.npy',

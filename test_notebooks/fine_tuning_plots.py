@@ -86,7 +86,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Use file path
-    pt_path_1 = f"../save/2025-04-02_19-50lorenz96_1.0_20_60_8192_EnST_tuned_joint/ft_records_{args.N}.pt"
-    pt_path_2 = f"../save/2025-04-02_20-12lorenz96_1.0_20_60_8192_EnST_tuned_joint/ft_records_{args.N}.pt"
+    pt_path_1 = f"../save/2025-04-13_18-32lorenz96_1.0_20_60_8192_norm_EnST_tuned_joint/ft_records_{args.N}.pt"
+    pt_path_2 = f"../save/2025-04-11_16-39lorenz96_1.0_20_60_8192_norm_EnST_tuned_joint/ft_records_{args.N}.pt"
     
     plot_comparison(pt_path_1, pt_path_2, save_dir='../save/figures/', filename=f'ft_comparison_{args.N}')

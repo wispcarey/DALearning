@@ -11,7 +11,7 @@ cd ..
 
 # # sigma_y = $sigma_y, EnST
 # for N in 5 10 15 20 40 60 100; do
-#     python test_enscorrection_set_transformer_local.py \
+#     python evaluate.py \
 #         --dataset $dataset \
 #         --N $N \
 #         --sigma_y $sigma_y \
@@ -27,7 +27,7 @@ cd ..
 
 # # sigma_y = $sigma_y, EnST
 # for N in 5 10 15 20 40 60 100; do
-#     python test_enscorrection_set_transformer_local.py \
+#     python evaluate.py \
 #         --dataset $dataset \
 #         --N $N \
 #         --sigma_y $sigma_y \
@@ -45,7 +45,7 @@ save_dir="2024-12-09_14-55lorenz96_1.0_20_60_8192_EnST_tuned_joint"
 
 # sigma_y = $sigma_y, EnST
 for N in 5 10 15 20 40 60 100; do
-    python test_enscorrection_set_transformer_local.py \
+    python evaluate.py \
         --dataset $dataset \
         --N $N \
         --sigma_y $sigma_y \
@@ -60,7 +60,7 @@ save_dir="2024-12-09_15-26lorenz96_0.7_20_60_8192_EnST_tuned_joint"
 
 # sigma_y = $sigma_y, EnST
 for N in 5 10 15 20 40 60 100; do
-    python test_enscorrection_set_transformer_local.py \
+    python evaluate.py \
         --dataset $dataset \
         --N $N \
         --sigma_y $sigma_y \
@@ -78,7 +78,7 @@ save_dir="2025-02-21_11-24ks_1.0_20_60_8192_EnST_tuned_joint"
 
 # sigma_y = $sigma_y, EnST
 for N in 5 10 15 20 40 60 100; do
-    python test_enscorrection_set_transformer_local.py \
+    python evaluate.py \
         --dataset $dataset \
         --N $N \
         --sigma_y $sigma_y \
@@ -94,7 +94,7 @@ save_dir="2025-02-21_12-23ks_0.7_20_60_8192_EnST_tuned_joint"
 # sigma_y = $sigma_y, EnST
 for N in 5 10 15 20 40 60 100; do
 # for N in 15; do
-    python test_enscorrection_set_transformer_local.py \
+    python evaluate.py \
         --dataset $dataset \
         --N $N \
         --sigma_y $sigma_y \

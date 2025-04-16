@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import os
 import sys
 import datetime
@@ -56,6 +57,74 @@ def check_nan_in_model(model):
 def get_mean_std(data_tensor):
     return torch.mean(data_tensor).item(), torch.std(data_tensor).item()
 
+def plot_particle_trajectories_with_histograms(particles: torch.Tensor, 
+                                                true_traj: torch.Tensor, 
+                                                dim_indices: list,
+                                                num_time_steps: int = 100,
+                                                mode: str = 'width',
+                                                save_fig: bool = False,
+                                                save_name: str = 'example_fig',
+                                                hist_step: int = 1):
+    if particles.is_cuda:
+        particles = particles.detach().cpu()
+    if true_traj.is_cuda:
+        true_traj = true_traj.detach().cpu()
+    J, N, d = particles.shape
+    max_time_step = np.minimum(J, num_time_steps)
+    time_steps = np.arange(max_time_step)
+    step_width = 1.0
+
+    for dim in dim_indices:
+        if dim >= true_traj.shape[-1]:
+            continue
+        plt.figure(figsize=(12, 6))
+        
+        plt.plot(time_steps, true_traj[:max_time_step, dim], label='True Trajectory', color='blue', linewidth=1)
+        particle_mean = particles[:max_time_step, :, dim].mean(dim=1)
+        plt.plot(time_steps, particle_mean, label='Particle Mean', color='red', linestyle='--', linewidth=1)
+
+        if mode == 'color':
+            all_bin_masses = []
+            for t in range(0, max_time_step, hist_step):
+                data = particles[t, :, dim].numpy()
+                hist, bins = np.histogram(data, bins=15, density=True)
+                for h, b_start, b_end in zip(hist, bins[:-1], bins[1:]):
+                    bin_mass = h * (b_end - b_start)
+                    all_bin_masses.append(bin_mass)
+            global_max_mass = max(all_bin_masses)
+
+        for t in range(0, max_time_step, hist_step):
+            data = particles[t, :, dim].numpy()
+            hist, bins = np.histogram(data, bins=15, density=True)
+            bin_centers = 0.5 * (bins[:-1] + bins[1:])
+
+            if mode == 'width':
+                hist_norm = hist / hist.max() * 0.8 if hist.max() > 0 else hist
+                plt.fill_betweenx(bin_centers, t - hist_norm, t + hist_norm,
+                                  facecolor='orange', edgecolor='none', alpha=0.5)
+            elif mode == 'color':
+                cmap = cm.get_cmap('Oranges')
+                for h, b_start, b_end in zip(hist, bins[:-1], bins[1:]):
+                    bin_mass = h * (b_end - b_start)
+                    norm_val = bin_mass / global_max_mass
+                    color = cmap(0.2 + 0.5 * norm_val)
+                    plt.fill_between([t - step_width / 2, t + step_width / 2],
+                                    b_start, b_end,
+                                    color=color, linewidth=0)
+
+        plt.xlabel('Time Step')
+        plt.ylabel(f'States')
+        plt.title(f'Dimension Index {dim}')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        if save_fig:
+            plt.savefig(f"{save_name}_dim_{dim}_{mode}.png", dpi=150)
+            plt.close()
+        else:
+            plt.show()
+
 def plot_results_3d(preds, gts, start_ind, end_ind):
     fig = plt.figure(figsize=(14, 10))
     ax = fig.add_subplot(111, projection='3d')
@@ -76,12 +145,12 @@ def plot_results_2d(preds, gts, start_ind, end_ind, plot_inds=None, save_path='v
         plot_inds = [0]
         
     num_plots = len(plot_inds)
-    fig, axes = plt.subplots(num_plots, 1, figsize=(14, 4 * num_plots))  # 设置宽高比
+    fig, axes = plt.subplots(num_plots, 1, figsize=(14, 4 * num_plots))  
 
     x_inds = torch.arange(start_ind, end_ind)
 
     for i, plot_ind in enumerate(plot_inds):
-        ax = axes[i] if num_plots > 1 else axes  # 如果只有一个图，axes不是一个列表
+        ax = axes[i] if num_plots > 1 else axes  
         ax.plot(x_inds, preds[plot_ind, start_ind:end_ind], c='r', label='Predictions')
         ax.plot(x_inds, gts[plot_ind, start_ind:end_ind], c='b', label='Ground-Truth')
 

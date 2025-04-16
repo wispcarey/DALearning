@@ -1,8 +1,15 @@
 import argparse
 import math
 import torch
+import sys
+import os
+import datetime
 
 from .dataset_info import DATASET_INFO
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from localization import pairwise_distances
+
 
 def float_or_random(value):
     try:
@@ -29,6 +36,9 @@ def int_or_default(value):
         return int(value)
     except ValueError:
         return "default"
+    
+def parse_list_type(s):
+    return s.split(',')
 
 def get_parameters():
     parser = argparse.ArgumentParser()
@@ -69,6 +79,10 @@ def get_parameters():
                         help='number of first steps ignored in calculating the loss in each training traj')
     parser.add_argument('--loss_warm_up', action='store_true',
                         help='warm-up the loss according to epochs')
+    parser.add_argument('--loss_type', type=parse_list_type, default=["normalized_l2"], 
+                        help='the type of loss function, split by comma, e.g., "l2,rmse,crps"')
+    parser.add_argument('--crps_p', type=float, default=1,
+                        help='the power of energy score')
 
     # training setting
     parser.add_argument('--cp_load_path', type=str, default="no",
@@ -83,8 +97,6 @@ def get_parameters():
                         help='test batch size')
     parser.add_argument('--detach_training_epoch', type=int, default=10000,
                         help='detach training epochs')
-    parser.add_argument('--loss_type', type=str, default="normalized_l2", choices=["l2", "normalized_l2", "rmse", "crps"],
-                        help='the type of loss function')
     parser.add_argument('--no_localization', action='store_true',
                         help='do not apply localization')
     parser.add_argument('--st_output_dim', type=int, default=64,
@@ -103,9 +115,10 @@ def get_parameters():
                         help='unfreeze Q weights in the PMA layer')
     parser.add_argument('--loc_max_val', type=float, default=2,
                         help='max value of the localization weights')
+    parser.add_argument('--obs_in_loc', action='store_true',
+                        help='include observation in the input of localization')
+    # parser.set_defaults(obs_in_loc=True)
 
-
-    
 
     # output setting
     parser.add_argument('--print_batch', type=float_or_str, default="auto",
@@ -121,10 +134,6 @@ def get_parameters():
     # optimization setting
     parser.add_argument('--learning_rate', type=float_or_default, default='default',
                         help='learning rate')
-    parser.add_argument('--lr_decay_epochs', type=str, default='200,300,400',
-                        help='where to decay lr, can be a list')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.5,
-                        help='decay rate for learning rate')
     parser.add_argument('--weight_decay', type=float, default=0,
                         help='weight decay')
     parser.add_argument('--momentum', type=float, default=0.9,
@@ -132,9 +141,13 @@ def get_parameters():
     parser.add_argument('--adjust_lr', action='store_true',
                         help='adjusting learning rate')
     parser.set_defaults(adjust_lr=True) ### default adjust lr
+    parser.add_argument('--lr_decay_epochs', type=str, default='200,300,400',
+                        help='where to decay lr, can be a list')
+    parser.add_argument('--lr_decay_rate', type=float, default=0.5,
+                        help='decay rate for learning rate')
     parser.add_argument('--warm_up', action='store_true',
                         help='adjusting learning rate')
-    parser.set_defaults(warm_up=True) ### default warm up
+    # parser.set_defaults(warm_up=True) ### default warm up
     parser.add_argument('--warm_up_rate', type=float, default=1.02,
                         help='warm-up rate')
     parser.add_argument('--warm_up_epochs', type=int, default=50,
@@ -147,6 +160,10 @@ def get_parameters():
     parser.add_argument('--test_only', action='store_true', help='Only do the test part')
     parser.add_argument('--test_rounds', type=int, default=1, help='Number of test rounds when selecting --test_only')
     parser.add_argument('--GPU_memory', type=int, default=16, help='GPU memory in GB')
+    
+    # version setting
+    parser.add_argument('--v', type=str, choices=['CorrTerms','EtE'],
+                        default='CorrTerms', help='versions')
 
     args = parser.parse_args()
 
@@ -190,6 +207,8 @@ def get_parameters():
     if args.batch_size == 'default':
         ori_batch_size = DATASET_INFO[args.dataset]['batch_size']
         args.batch_size = ori_batch_size
+    else:
+        ori_batch_size = args.batch_size
         
     if args.test_batch_size == 'default':
         args.test_batch_size = args.test_traj_num
@@ -227,5 +246,42 @@ def get_parameters():
         
     if ori_batch_size != args.batch_size:
         args.learning_rate = args.learning_rate * (args.batch_size / ori_batch_size) ** 0.5
+        
+    if args.st_type == 'state_only':
+        print("Only apply an ST on the ensemble state data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim
+        args.local_input_dim = args.st_output_dim
+    elif args.st_type == "separate": 
+        print("Apply STs separately on the ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.st_output_dim * 2
+    elif args.st_type == 'joint':
+        print("Apply an ST on the joint distribution of ensemble state data and observation data.")
+        args.input_dim = args.ori_dim + 2 * args.obs_dim + args.st_output_dim * 2 
+        args.local_input_dim = args.st_output_dim * 2
+    else:
+        raise ValueError("Please use a valid st_type.")
+    
+    if args.obs_in_loc:
+        args.local_input_dim += args.obs_dim
+        
+    # localization
+    full_inds = torch.arange(0, args.ori_dim)
+    Lvy = pairwise_distances(full_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
+    Lyy = pairwise_distances(args.obs_inds[:, None], args.obs_inds[:, None], domain=(args.ori_dim,)).to(args.device)
+    args.diff_dist = torch.unique(torch.cat((Lvy.flatten(), Lyy.flatten())))
+    args.num_dist = len(args.diff_dist)
+    args.Lvy = Lvy
+    args.Lyy = Lyy
+    
+    # Save folder
+    if args.cp_load_path != "no":
+        suffix = "_tuned"
+    else:
+        suffix = ""
+    folder_name = os.path.join("save", datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
+    loss_type_name = "_".join([loss_type[:4] for loss_type in args.loss_type])
+    folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_{loss_type_name}_EnST{suffix}_{args.st_type}_{args.v}"
+    args.save_folder = folder_name
     
     return args

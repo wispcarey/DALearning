@@ -29,20 +29,20 @@ ENSEMBLE_SIZE = [5,10,15,20,40,60,100]
 
 DATASET_FOLDERS = {
     'lorenz63': [
-        "2025-03-29_20-33lorenz63_1.0_10_60_8192_EnST_joint",
-        "2025-03-29_22-36lorenz63_0.7_10_60_8192_EnST_joint",
-        "2025-03-31_13-57lorenz63_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-31_14-15lorenz63_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-10_17-18lorenz63_1.0_10_60_8192_norm_EnST_joint",
+        "2025-04-10_19-40lorenz63_0.7_10_60_8192_norm_EnST_joint",
+        "2025-04-11_12-18lorenz63_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_12-39lorenz63_0.7_20_60_8192_norm_EnST_tuned_joint"],
     'lorenz96': [
-        "2025-03-25_07-10lorenz96_1.0_10_60_8192_EnST_joint",
-        "2025-03-25_11-19lorenz96_0.7_10_60_8192_EnST_joint",
-        "2025-03-26_15-32lorenz96_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-26_16-42lorenz96_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-10_09-31lorenz96_1.0_10_60_8192_norm_EnST_joint",
+        "2025-04-10_13-18lorenz96_0.7_10_60_8192_norm_EnST_joint",
+        "2025-04-11_12-59lorenz96_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_13-31lorenz96_0.7_20_60_8192_norm_EnST_tuned_joint"],
     'ks': [
-        "2025-03-24_10-26ks_1.0_10_60_8192_EnST_joint",
-        "2025-03-24_18-50ks_0.7_10_60_8192_EnST_joint",
-        "2025-03-26_17-13ks_1.0_20_60_8192_EnST_tuned_joint",
-        "2025-03-26_18-15ks_0.7_20_60_8192_EnST_tuned_joint"],
+        "2025-04-09_18-18ks_1.0_10_60_8192_norm_EnST_joint",
+        "2025-04-10_01-52ks_0.7_10_60_8192_norm_EnST_joint",
+        "2025-04-11_14-02ks_1.0_20_60_8192_norm_EnST_tuned_joint",
+        "2025-04-11_15-09ks_0.7_20_60_8192_norm_EnST_tuned_joint"],
 }
 
 DATASET_METHODS = {
@@ -77,7 +77,7 @@ COLOR_DICT = {
     'LETKF': "red",
     'ESRF': "cyan",
     'EnKF': "orange",
-    'iEnKF': "Brown",
+    'IEnKF': "Brown",
     'MLEF': "purple"
 }
 
@@ -203,7 +203,7 @@ def get_benchmarks(args):
         
         # Store in result dictionary
         if method == 'iEnKF_PertObs':
-            method_name = 'iEnKF'
+            method_name = 'IEnKF'
         elif method == 'EnKF_Sqrt':
             method_name = 'ESRF'
         elif method == 'EnKF_PertObs':
@@ -271,7 +271,7 @@ def plot_results_all(args):
     
     std_record = {'dataset':dataset_name}
     for key, value in nn_results.items():
-        if key == 'Tuned':
+        if key.startswith('Tuned'):
             ours_best = value
         # change nan to values
         nan_in_ours = np.logical_or(nan_in_ours, np.any(np.isnan(value), axis=(1,2)))
@@ -339,8 +339,8 @@ def plot_results_all(args):
             other_results['EnKF'] = value
         elif key == "LETKF":
             other_results['LETKF'] = value
-        elif key == "iEnKF":
-            other_results['iEnKF'] = value
+        elif key == "IEnKF":
+            other_results['IEnKF'] = value
         
         nan_in_others = np.logical_or(nan_in_others, np.any(np.isnan(value), axis=(1,2)))
         for i in [0,1,2,3]:
@@ -452,11 +452,11 @@ def plot_results_all(args):
     
     min_val = np.minimum(np.min(relative_imp_07_enkf), np.min(relative_imp_1_enkf))
     
-    relative_imp_1_ienkf = (other_results['iEnKF'][0,:,2] - ours_best[0,:,2]) / other_results['iEnKF'][0,:,2]
-    relative_imp_07_ienkf = (other_results['iEnKF'][1,:,2] - ours_best[1,:,2]) / other_results['iEnKF'][1,:,2]
+    relative_imp_1_ienkf = (other_results['IEnKF'][0,:,2] - ours_best[0,:,2]) / other_results['IEnKF'][0,:,2]
+    relative_imp_07_ienkf = (other_results['IEnKF'][1,:,2] - ours_best[1,:,2]) / other_results['IEnKF'][1,:,2]
     # Plot relative improvement
-    plt.plot(x_inds, relative_imp_1_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"iEnKF $\sigma_y=1$")
-    plt.plot(x_inds, relative_imp_07_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"iEnKF $\sigma_y=0.7$")
+    plt.plot(x_inds, relative_imp_1_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"IEnKF $\sigma_y=1$")
+    plt.plot(x_inds, relative_imp_07_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"IEnKF $\sigma_y=0.7$")
     
     min_val = np.minimum(min_val, np.minimum(np.min(relative_imp_07_ienkf), np.min(relative_imp_1_ienkf)))
     

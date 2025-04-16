@@ -1,42 +1,42 @@
 import torch
+import torch.nn as nn
 
 def compute_crps(ens_states, true_states, norm_p=1):
     """
-    Compute the discrete Continuous Ranked Probability Score (CRPS)
+    Memory-efficient CRPS computation for shape [T, B, N, D] inputs.
     
-    Parameters:
-        ens_states: Ensemble forecasts with shape [..., ensemble_size, feature_dim]
-        true_states: Ground truth observations with shape [..., feature_dim]
-    
+    Args:
+        ens_states: [T, B, N, D] - Ensemble predictions
+        true_states: [T, B, D]   - Ground truth
+        norm_p: Norm type (e.g., 2 for L2)
+
     Returns:
-        CRPS values averaged over feature dimensions
+        crps: [T, B] - CRPS per time step and batch element
     """
-    # Get the number of ensemble members
-    n_samples = ens_states.size(-2)
-    
-    # Expand dimensions for broadcasting
-    true_expanded = true_states.unsqueeze(-2)  # [..., 1, feature_dim]
-    
-    # Compute first term: mean Euclidean norm between each ensemble member and ground truth
-    # Using L2 norm along the feature dimension
-    term1 = torch.mean(torch.norm(ens_states - true_expanded, p=norm_p, dim=-1), dim=-1)
-    
-    # Compute second term: mean Euclidean norm between all pairs of ensemble members
-    ens_i = ens_states.unsqueeze(-3)  # [..., 1, ensemble_size, feature_dim]
-    ens_j = ens_states.unsqueeze(-2)  # [..., ensemble_size, 1, feature_dim]
-    
-    # Compute L2 norm along feature dimension for all pairs
-    pairwise_dists = torch.norm(ens_i - ens_j, p=norm_p, dim=-1)  # [..., ensemble_size, ensemble_size]
-    
-    # Average over all pairs
-    term2 = torch.sum(pairwise_dists, dim=(-2, -1)) / (n_samples * n_samples)
-    
-    # CRPS
-    crps = term1 - 0.5 * term2
-    
+    T, B, N, D = ens_states.shape
+
+    # First term: mean distance from ensemble members to ground truth
+    true_expanded = true_states.unsqueeze(2)  # [T, B, 1, D]
+    term1 = torch.mean(torch.norm(ens_states - true_expanded, p=norm_p, dim=-1), dim=2)  # [T, B]
+
+    # Second term: mean pairwise distance between ensemble members
+    total = torch.zeros(T, B, device=ens_states.device)
+    for i in range(N):
+        xi = ens_states[:, :, i:i+1, :]  # [T, B, 1, D]
+        for j in range(i, N):
+            xj = ens_states[:, :, j:j+1, :]  # [T, B, 1, D]
+            dist = torch.norm(xi - xj, p=norm_p, dim=-1).squeeze(-1)  # [T, B]
+            if i == j:
+                total += dist
+            else:
+                total += 2 * dist  # symmetric pairs
+
+    term2 = total / (N * N)  # [T, B]
+    crps = term1 - 0.5 * term2  # [T, B]
+
     return crps
 
-def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, valid_B_mask=None):
+def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, valid_B_mask=None, norm_p=1):
     """
     Comprehensive loss function supporting multiple loss types
     
@@ -83,13 +83,26 @@ def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, v
         loss = torch.mean(torch.sqrt(mse + 1e-8))  # Add small constant for numerical stability
     elif loss_type == 'crps':
         # Continuous Ranked Probability Score
-        crps_values = compute_crps(ens_states, true_states)  # [time, valid_batch, feature_dim]
-        loss = torch.mean(crps_values)
-    
+        crps_values = compute_crps(ens_states, true_states, norm_p)  # [time, valid_batch]
+        true_norm = torch.norm(true_states, p=norm_p, dim=2)
+        loss = torch.mean(crps_values / (true_norm + 1e-8))
     else:
         raise NotImplementedError(f"Loss type '{loss_type}' is not implemented")
     
     return loss
+class MultiLossUncertaintyWeight(nn.Module):
+    def __init__(self, num_losses):
+        super(MultiLossUncertaintyWeight, self).__init__()
+        # learnable log(sigma) for each loss
+        self.log_sigma = nn.Parameter(torch.zeros(num_losses))
+
+    def forward(self, losses):
+        # losses: list or tensor of individual losses
+        total_loss = 0
+        for i, loss in enumerate(losses):
+            weight = torch.exp(-self.log_sigma[i])
+            total_loss += weight * loss + self.log_sigma[i]
+        return total_loss
 
 if __name__ == "__main__":
     # Test dimensions of compute_crps output
