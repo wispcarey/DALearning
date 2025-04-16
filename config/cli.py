@@ -79,7 +79,7 @@ def get_parameters():
                         help='number of first steps ignored in calculating the loss in each training traj')
     parser.add_argument('--loss_warm_up', action='store_true',
                         help='warm-up the loss according to epochs')
-    parser.add_argument('--loss_type', type=parse_list_type, default=["normalized_l2"], 
+    parser.add_argument('--loss_type', type=parse_list_type, default=["nl2"], 
                         help='the type of loss function, split by comma, e.g., "l2,rmse,crps"')
     parser.add_argument('--crps_p', type=float, default=1,
                         help='the power of energy score')
@@ -280,7 +280,7 @@ def get_parameters():
     else:
         suffix = ""
     folder_name = os.path.join("save", datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
-    loss_type_name = "_".join([loss_type[:4] for loss_type in args.loss_type])
+    loss_type_name = "_".join([loss_type for loss_type in args.loss_type])
     folder_name += f"{args.dataset}_{args.sigma_y}_{args.N}_{args.train_steps}_{args.train_traj_num}_{loss_type_name}_EnST{suffix}_{args.st_type}_{args.v}"
     args.save_folder = folder_name
     
