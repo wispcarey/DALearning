@@ -14,11 +14,11 @@ cd ..
 #     --sigma_y 0.7 \
 #     --seed 42 
 
-# python train.py \
-#     --dataset lorenz96 \
-#     --N 10 \
-#     --sigma_y 1 \
-#     --seed 42 
+python train.py \
+    --dataset lorenz96 \
+    --N 10 \
+    --sigma_y 1 \
+    --seed 42 
 
 python train.py \
     --dataset lorenz96 \

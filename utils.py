@@ -371,6 +371,7 @@ def gen_data_old(dataset, t, steps_test, steps_valid, step=None, check_disk=True
         raise ValueError('Dataset not implemented')
     return true_v, true_v_test[steps_burn:steps_valid + steps_burn], true_v_test[steps_burn + steps_valid:]
 
+
 def gen_data(dataset, t, steps_test, steps_valid, v0=None, sigma_v=0,
              check_disk=True, steps_burn=1000, dt_iter=2, prefix="", test_only=False):
     """

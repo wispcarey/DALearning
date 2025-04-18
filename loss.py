@@ -24,8 +24,8 @@ def compute_es(ens_states, true_states, norm_p=1):
     true_expanded = true_states.unsqueeze(2)  # [T, B, 1, D]
     # Compute distances: shape [T, B, N]
     dist_to_true = torch.norm(ens_states - true_expanded, p=norm_p, dim=-1)
-    # Compute (2 / N) * sum_{i=1}^N ||x_i - y||
-    term_obs = (2.0 / N) * torch.sum(dist_to_true, dim=2)  # [T, B]
+    # Compute (1 / N) * sum_{i=1}^N ||x_i - y||
+    term_obs = (1 / N) * torch.sum(dist_to_true, dim=2)  # [T, B]
     
     # Compute the average pairwise distance among ensemble members.
     total_pair = torch.zeros(T, B, device=ens_states.device)
@@ -38,21 +38,20 @@ def compute_es(ens_states, true_states, norm_p=1):
             total_pair += dist_pair
     # There are N*(N-1)/2 distinct pairs; compute average of all distinct pairs,
     # then multiply by 2 to obtain (1/(N*(N-1))) * sum_{i != j} ||x_i - x_j||
-    term_pair = (2.0 * total_pair) / (N * (N - 1))  # [T, B]
+    term_pair = (2 * total_pair) / (N * (N - 1))  # [T, B]
     
     # Energy Score: ES = (pairwise term) - (observation term)
-    es = term_pair - term_obs  # [T, B]
+    es = term_obs - term_pair / 2  # [T, B]
     return es
 
 def compute_kernel_es(ens_states, true_states, sigma=None):
     """
     Compute the kernel version of the Energy Score (kernel ES) using Gaussian kernel.
-    
+
     The Gaussian kernel is defined as:
-        k(x, y) = exp(-||x - y||^2/(2 * sigma^2))
+        k(x, y) = exp(-||x - y||^2/(2*sigma^2))
     
     The kernel Energy Score is computed as:
-    
         kernel_ES = 1/2 * (average kernel value over all distinct ensemble pairs)
                     - 1/N * (average kernel value between ensemble members and ground truth)
     
@@ -71,48 +70,51 @@ def compute_kernel_es(ens_states, true_states, sigma=None):
     T, B, N, D = ens_states.shape
     device = ens_states.device
 
-    # Compute sigma if not provided, per (T, B)
+    # Compute sigma if not provided: for each (T, B), compute the median distance between 
+    # each ensemble member and the true state.
     if sigma is None:
-        # Expand true_states to [T, B, 1, D] for broadcasting.
-        true_expanded = true_states.unsqueeze(2)  # [T, B, 1, D]
-        # Compute Euclidean distances for each ensemble member: shape [T, B, N]
-        distances = torch.norm(ens_states - true_expanded, dim=-1)
-        # Sigma for each (T, B) is set as the median over the ensemble dimension.
-        sigma_val = torch.median(distances, dim=2)[0]  # [T, B]
+        true_expanded = true_states.unsqueeze(2)  # shape: [T, B, 1, D]
+        distances = torch.norm(ens_states - true_expanded, dim=-1)  # shape: [T, B, N]
+        sigma_val = torch.median(distances, dim=2)[0] + 1e-8 # shape: [T, B]
     else:
-        sigma_val = torch.tensor(sigma, device=device).expand(T, B)  # [T, B]
+        sigma_val = torch.tensor(sigma, device=device).expand(T, B) + 1e-8 # shape: [T, B]
     
-    # Expand sigma_val to shape [T, B, 1, 1] for kernel computation.
-    sigma_val = sigma_val.unsqueeze(-1).unsqueeze(-1)
-    
-    # Compute kernel values between ensemble members and the true state.
+    # Expand sigma_val to [T, B, 1, 1] for broadcasting.
+    sigma_val = sigma_val.unsqueeze(-1).unsqueeze(-1)  # shape: [T, B, 1, 1]
+
+    # -------------------------------------------
+    # Compute observed kernel term.
     true_expanded = true_states.unsqueeze(2)  # [T, B, 1, D]
     diff_obs = ens_states - true_expanded      # [T, B, N, D]
-    dist_sq_obs = torch.sum(diff_obs ** 2, dim=-1)  # [T, B, N]
-    k_obs = torch.exp(-dist_sq_obs / (2 * sigma_val ** 2))  # [T, B, N]
-    # Average over ensemble members.
-    observed_term = torch.mean(k_obs, dim=2)  # [T, B]
-    
-    # Compute average kernel value for distinct ensemble pairs.
+    # Compute squared distances, keeping the last dimension
+    dist_sq_obs = torch.sum(diff_obs ** 2, dim=-1, keepdim=True)  # shape: [T, B, N, 1]
+    # Compute Gaussian kernel: k(x,y)=exp(-||x-y||^2/(2*sigma^2))
+    k_obs = torch.exp(-dist_sq_obs / (2 * sigma_val ** 2))  # shape: [T, B, N, 1]
+    # Average over ensemble members, then squeeze the last dimension: result [T, B]
+    observed_term = torch.mean(k_obs, dim=2).squeeze(-1)  # [T, B]
+
+    # -------------------------------------------
+    # Compute kernel term over distinct ensemble pairs.
     total = torch.zeros(T, B, device=device)
     for i in range(N):
         xi = ens_states[:, :, i:i+1, :]  # [T, B, 1, D]
         for j in range(i + 1, N):
             xj = ens_states[:, :, j:j+1, :]  # [T, B, 1, D]
             diff_pair = xi - xj              # [T, B, 1, D]
-            dist_sq_pair = torch.sum(diff_pair ** 2, dim=-1)  # [T, B, 1]
-            k_pair = torch.exp(-dist_sq_pair / (2 * sigma_val ** 2))  # [T, B, 1]
-            total += k_pair.squeeze(-1)  # [T, B]
+            # Sum the squares with keepdim=True to get shape [T, B, 1, 1]
+            dist_sq_pair = torch.sum(diff_pair ** 2, dim=-1, keepdim=True)  # [T, B, 1, 1]
+            k_pair = torch.exp(-dist_sq_pair / (2 * sigma_val ** 2))  # [T, B, 1, 1]
+            # Squeeze the last two singleton dimensions and accumulate.
+            total += k_pair.squeeze(-1).squeeze(-1)  # [T, B]
     
-    # Number of distinct pairs is N*(N-1)/2, so the average kernel value is:
+    # There are N*(N-1)/2 distinct pairs; compute average kernel value:
     first_term_avg = (2 * total) / (N * (N - 1))
     
-    # Final kernel energy score as per the formula:
-    # kernel_ES = 0.5 * (first_term_avg) - (1/N) * (observed_term)
+    # Final kernel Energy Score: 0.5 * (first term) - (1/N) * (observed term)
     kernel_es = 0.5 * first_term_avg - (1.0 / N) * observed_term
     return kernel_es
 
-def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, valid_B_mask=None, norm_p=1):
+def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, valid_B_mask=None, norm_p=1, kes_sigma=1):
     """
     Comprehensive loss function supporting multiple loss types.
     
@@ -120,7 +122,7 @@ def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, v
         ens_tensor: Ensemble predictions with shape [time_steps, batch_size, ensemble_size, feature_dim].
         batch_v: Ground truth values with shape [time_steps, batch_size, feature_dim].
         loss_type: Type of loss ('l2', 'normalized_l2', 'rmse', 'es', or combinations).
-                   For kernel version, use 'kes' for kernel energy score and 'nkes' for normalized version.
+                For kernel version, use 'kes' for kernel energy score and 'nkes' for normalized version.
         ignore_first: Number of initial time steps to ignore.
         end_ind: Last time step to consider (inclusive), defaults to all.
         valid_B_mask: Boolean mask for valid batch elements, defaults to all valid.
@@ -174,16 +176,16 @@ def compute_loss(ens_tensor, batch_v, loss_type, ignore_first=0, end_ind=None, v
         loss = torch.mean(torch.sum(es_values, dim=0) / (torch.sum(true_norm, dim=0) + 1e-8))
     elif loss_type == 'kes':
         # Kernel Energy Score (using Gaussian kernel).
-        es_values = compute_kernel_es(ens_states, true_states, sigma=None)
+        es_values = compute_kernel_es(ens_states, true_states, sigma=kes_sigma)
         loss = torch.mean(es_values)
     elif loss_type == 'nkes':
         # Normalized Kernel Energy Score.
-        es_values = compute_kernel_es(ens_states, true_states, sigma=None)
+        es_values = compute_kernel_es(ens_states, true_states, sigma=kes_sigma)
         true_norm = torch.norm(true_states, p=norm_p, dim=2)
         loss = torch.mean(es_values / (true_norm + 1e-8))
     elif loss_type == 'tnkes':
         # Trajectory Normalized Kernel Energy Score.
-        es_values = compute_kernel_es(ens_states, true_states, sigma=None)
+        es_values = compute_kernel_es(ens_states, true_states, sigma=kes_sigma)
         true_norm = torch.norm(true_states, p=norm_p, dim=2)
         loss = torch.mean(torch.sum(es_values, dim=0) / (torch.sum(true_norm, dim=0) + 1e-8))
     else:
@@ -205,30 +207,35 @@ class MultiLossUncertaintyWeight(nn.Module):
         return total_loss
 
 if __name__ == "__main__":
-    # Test dimensions of compute_crps output
+    # Test dimensions of the Energy Score functions.
     
-    # Setup test parameters
+    # Setup test parameters.
     time_steps = 8
     batch_size = 4
     ensemble_size = 10
     feature_dim = 3
     
-    # Create test data
+    # Create test data.
     ens_states = torch.randn(time_steps, batch_size, ensemble_size, feature_dim)
     true_states = torch.randn(time_steps, batch_size, feature_dim)
     
-    # Compute CRPS
-    crps_result = compute_crps(ens_states, true_states)
+    # Compute Energy Score (standard version)
+    es_result = compute_es(ens_states, true_states)
     
-    # Print input and output dimensions
-    print(f"Input dimensions:")
+    # Compute Kernel Energy Score
+    kes_result = compute_kernel_es(ens_states, true_states, sigma=None)
+    
+    # Print input and output dimensions.
+    print("Input dimensions:")
     print(f"  ens_states: {ens_states.shape}")
     print(f"  true_states: {true_states.shape}")
-    print(f"Output dimension:")
-    print(f"  crps_result: {crps_result.shape}")
+    print("Output dimensions:")
+    print(f"  Energy Score: {es_result.shape}")
+    print(f"  Kernel Energy Score: {kes_result.shape}")
     
-    # Verify output dimension is as expected
+    # Verify output dimension is as expected: should be [time_steps, batch_size]
     expected_shape = torch.Size([time_steps, batch_size])
-    assert crps_result.shape == expected_shape, f"Expected shape {expected_shape}, got {crps_result.shape}"
+    assert es_result.shape == expected_shape, f"Expected shape {expected_shape}, got {es_result.shape}"
+    assert kes_result.shape == expected_shape, f"Expected shape {expected_shape}, got {kes_result.shape}"
     
     print("Test passed! Output dimensions are correct.")

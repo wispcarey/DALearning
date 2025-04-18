@@ -9,7 +9,7 @@ from utils import AverageMeter, mystery_operator, get_mean_std
 from utils import plot_particle_trajectories_with_histograms
 from EnKF_utils import loc_EnKF_analysis, EnKF_analysis, post_process, mean0
 from localization import dist2coeff, create_loc_mat
-from loss import compute_loss, compute_crps
+from loss import compute_loss, compute_es
 from networks import NaiveNetwork, SetTransformer, Simple_MLP
 
 def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=None):
@@ -196,7 +196,8 @@ def train_model(epoch, loader, model_list, optimizer, scheduler, args, H_info=No
                                     ignore_first=ignore_first, 
                                     end_ind=None, 
                                     valid_B_mask=valid_B_mask,
-                                    norm_p=args.crps_p)
+                                    norm_p=args.es_p,
+                                    kes_sigma=args.kes_sigma)
 
             success_count += torch.sum(valid_B_mask)
             
@@ -276,7 +277,7 @@ def test_model(loader, model_list, args, infl=1, H_info=None, plot_figures=True,
                         ens_v_a = forward_fun(ens_v_a, None, args.dt / args.dt_iter)
                     else:
                         ens_v_a = rk4(forward_fun, ens_v_a, i * args.dt + j * args.dt / args.dt_iter,
-                                  args.dt / args.dt_iter)
+                                args.dt / args.dt_iter)
                 ens_v_f = ens_v_a.view(-1, m, args.ori_dim)
                 
                 # add forward noise
@@ -394,7 +395,7 @@ def test_model(loader, model_list, args, infl=1, H_info=None, plot_figures=True,
             
             # Loss functions
             # absolute rmse
-            crps_tensor = torch.mean(compute_crps(ens_states=ens_tensor, true_states=batch_v), dim=0)
+            crps_tensor = torch.mean(compute_es(ens_states=ens_tensor, true_states=batch_v, norm_p=1), dim=0) / torch.mean(torch.norm(batch_v, p=1, dim=2), dim=0)
             rmse_tensor = torch.mean(torch.sqrt(torch.mean((ens_tensor.mean(dim=2) - batch_v) ** 2, dim=2)), dim=0)
             rms_tensor = torch.mean(torch.sqrt(torch.mean((batch_v) ** 2, dim=2)), dim=0)
             rrmse_tensor = rmse_tensor / rms_tensor
