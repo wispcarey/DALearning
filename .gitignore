@@ -21,3 +21,6 @@ env/
 
 # Ignore macOS system files
 .DS_Store
+
+# Ignore JetBrains IDE project-specific settings
+.idea/

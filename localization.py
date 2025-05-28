@@ -26,6 +26,9 @@ def pairwise_distances(A, B=None, domain=None):
 
 
 def dist2coeff(dists, radius, tag=None):
+    if radius is None:
+        return torch.ones_like(dists)
+    
     coeffs = torch.zeros(dists.shape, device=dists.device)
 
     if tag is None:

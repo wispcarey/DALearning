@@ -1,6 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import cm
 import os
 import sys
 import datetime
@@ -56,113 +54,6 @@ def check_nan_in_model(model):
 
 def get_mean_std(data_tensor):
     return torch.mean(data_tensor).item(), torch.std(data_tensor).item()
-
-def plot_particle_trajectories_with_histograms(particles: torch.Tensor, 
-                                                true_traj: torch.Tensor, 
-                                                dim_indices: list,
-                                                num_time_steps: int = 100,
-                                                mode: str = 'width',
-                                                save_fig: bool = False,
-                                                save_name: str = 'example_fig',
-                                                hist_step: int = 1):
-    if particles.is_cuda:
-        particles = particles.detach().cpu()
-    if true_traj.is_cuda:
-        true_traj = true_traj.detach().cpu()
-    J, N, d = particles.shape
-    max_time_step = np.minimum(J, num_time_steps)
-    time_steps = np.arange(max_time_step)
-    step_width = 1.0
-
-    for dim in dim_indices:
-        if dim >= true_traj.shape[-1]:
-            continue
-        plt.figure(figsize=(12, 6))
-        
-        plt.plot(time_steps, true_traj[:max_time_step, dim], label='True Trajectory', color='blue', linewidth=1)
-        particle_mean = particles[:max_time_step, :, dim].mean(dim=1)
-        plt.plot(time_steps, particle_mean, label='Particle Mean', color='red', linestyle='--', linewidth=1)
-
-        if mode == 'color':
-            all_bin_masses = []
-            for t in range(0, max_time_step, hist_step):
-                data = particles[t, :, dim].numpy()
-                hist, bins = np.histogram(data, bins=15, density=True)
-                for h, b_start, b_end in zip(hist, bins[:-1], bins[1:]):
-                    bin_mass = h * (b_end - b_start)
-                    all_bin_masses.append(bin_mass)
-            global_max_mass = max(all_bin_masses)
-
-        for t in range(0, max_time_step, hist_step):
-            data = particles[t, :, dim].numpy()
-            hist, bins = np.histogram(data, bins=15, density=True)
-            bin_centers = 0.5 * (bins[:-1] + bins[1:])
-
-            if mode == 'width':
-                hist_norm = hist / hist.max() * 0.8 if hist.max() > 0 else hist
-                plt.fill_betweenx(bin_centers, t - hist_norm, t + hist_norm,
-                                  facecolor='orange', edgecolor='none', alpha=0.5)
-            elif mode == 'color':
-                cmap = cm.get_cmap('Oranges')
-                for h, b_start, b_end in zip(hist, bins[:-1], bins[1:]):
-                    bin_mass = h * (b_end - b_start)
-                    norm_val = bin_mass / global_max_mass
-                    color = cmap(0.2 + 0.5 * norm_val)
-                    plt.fill_between([t - step_width / 2, t + step_width / 2],
-                                    b_start, b_end,
-                                    color=color, linewidth=0)
-
-        plt.xlabel('Time Step')
-        plt.ylabel(f'States')
-        plt.title(f'Dimension Index {dim}')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-
-        if save_fig:
-            plt.savefig(f"{save_name}_dim_{dim}_{mode}.png", dpi=150)
-            plt.close()
-        else:
-            plt.show()
-
-def plot_results_3d(preds, gts, start_ind, end_ind):
-    fig = plt.figure(figsize=(14, 10))
-    ax = fig.add_subplot(111, projection='3d')
-
-    ax.plot(preds[0, start_ind:end_ind], preds[1, start_ind:end_ind], preds[2, start_ind:end_ind], c='r', label='Predictions')
-    ax.plot(gts[0, start_ind:end_ind], gts[1, start_ind:end_ind], gts[2, start_ind:end_ind], c='b', label='Ground-Truth')
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
-    ax.legend()
-
-    plt.show()
-
-def plot_results_2d(preds, gts, start_ind, end_ind, plot_inds=None, save_path='vis_results.png'):
-    if plot_inds is None:
-        plot_inds = [0]
-        
-    num_plots = len(plot_inds)
-    fig, axes = plt.subplots(num_plots, 1, figsize=(14, 4 * num_plots))  
-
-    x_inds = torch.arange(start_ind, end_ind)
-
-    for i, plot_ind in enumerate(plot_inds):
-        ax = axes[i] if num_plots > 1 else axes  
-        ax.plot(x_inds, preds[plot_ind, start_ind:end_ind], c='r', label='Predictions')
-        ax.plot(x_inds, gts[plot_ind, start_ind:end_ind], c='b', label='Ground-Truth')
-
-        ax.set_title(f'Dimension Index: {plot_ind}')
-
-        if i < num_plots - 1:
-            ax.tick_params(labelbottom=False)
-
-        ax.legend()
-
-    plt.tight_layout() 
-    plt.savefig(save_path)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -826,3 +717,81 @@ def batch_covariance(x, y=None):
         cov_matrix = torch.bmm(x_centered.transpose(1, 2), y_centered) / N
     
     return cov_matrix
+
+def center(E, axis=1, rescale=False):
+    x = torch.mean(E, dim=axis, keepdims=True)
+    X = E - x
+
+    if rescale:
+        N = E.shape[axis]
+        X *= torch.sqrt(torch.tensor(N / (N - 1))).to(E.device)
+    
+    # x = x.squeeze(axis=axis)
+
+    return X, x
+
+def mean0(E, axis=1, rescale=True):
+    return center(E, axis=axis, rescale=rescale)[0]
+
+def mrdiv(b, A):
+    """b/A."""
+    if A.dim() == 3:
+        return torch.linalg.solve(A.transpose(1,2), b.transpose(1,2)).transpose(1,2)
+    
+    return torch.linalg.solve(A.T, b.T).T
+
+def svd0(A):
+    U, S, V = torch.svd(A, some=False)
+    return U, S, V
+
+def pad0(x, N):
+    """Pad `x` with zeros so that `x.shape[1]==N`."""
+    out = torch.zeros(x.shape[0], N, device=x.device)
+    out[:, :x.shape[1]] = x
+    return out
+
+def check_infl(infl):
+    do_infl = False  
+
+    if isinstance(infl, torch.Tensor):
+        if infl.dim() == 3:
+            do_infl = True
+        elif infl.dim() == 1:
+            if infl.item() != 1.0 and infl.item() != "-N":
+                do_infl = True
+            else:
+                do_infl = False
+        else:
+            raise ValueError("Tensor dim is not supported, should be either 1 or 3.")
+    
+    elif isinstance(infl, (int, float)):
+        if infl != 1.0 and infl != "-N":
+            do_infl = True
+        else:
+            do_infl = False
+    
+    else:
+        raise TypeError("infl must be a Tensor, int, or float.")
+
+    return do_infl
+
+def post_process(E, infl):
+    """Inflate, Rotate.
+
+    To avoid recomputing/recombining anomalies,
+    this should have been inside `EnKF_analysis`
+
+    But it is kept as a separate function
+
+    - for readability;
+    - to avoid inflating/rotationg smoothed states (for the `EnKS`).
+    """
+
+    if check_infl(infl):
+        A, mu = center(E)
+        # B, N, _ = E.shape
+        # T = torch.eye(N).unsqueeze(0).expand(B, -1, -1).to(E.device)
+        # T = infl * T
+        # E = mu + torch.bmm(T, A)
+        E = mu + infl * A
+    return E

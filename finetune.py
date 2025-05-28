@@ -10,7 +10,7 @@ from config.cli import get_parameters
 from utils import setup_optimizer_and_scheduler, save_checkpoint, load_checkpoint
 from utils import partial_obs_operator, get_dataloader, redirect_output
 from utils import redirect_output
-from training_utils import train_model, test_model, set_models
+from train_test_utils import train_model, test_model, set_models
 
 
 if __name__ == "__main__":

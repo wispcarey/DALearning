@@ -159,13 +159,15 @@ def get_parameters():
                         help='use SGD optimizer, otherwise use Adam')
 
     # others
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda','cpu'],
+                        help='device')
     parser.add_argument('--seed', type=str, default=None, help='Random Seed')
     parser.add_argument('--test_only', action='store_true', help='Only do the test part')
     parser.add_argument('--test_rounds', type=int, default=1, help='Number of test rounds when selecting --test_only')
     parser.add_argument('--GPU_memory', type=int, default=16, help='GPU memory in GB')
     
     # version setting
-    parser.add_argument('--v', type=str, choices=['CorrTerms','EtE'],
+    parser.add_argument('--v', type=str, choices=['CorrTerms','EtE','EnKF','ESRF','LETKF'],
                         default='CorrTerms', help='versions')
 
     args = parser.parse_args()
@@ -224,16 +226,20 @@ def get_parameters():
     args.obs_inds = DATASET_INFO[args.dataset]['obs_inds']
     args.clamp = DATASET_INFO[args.dataset]['clamp']
     
-    args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    print(f"Detected {torch.cuda.device_count()} GPUs")
-    if num_gpus > 1:
-        args.use_data_parallel = True
-        args.batch_size = args.batch_size * num_gpus
-        print(f"Use DataParallel. Adjusted Batch Size: {args.batch_size}")
+    if args.device == 'cuda':
+        args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        num_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 1
+        print(f"Detected {torch.cuda.device_count()} GPUs")
+        if num_gpus > 1:
+            args.use_data_parallel = True
+            args.batch_size = args.batch_size * num_gpus
+            print(f"Use DataParallel. Adjusted Batch Size: {args.batch_size}")
+        else:
+            args.use_data_parallel = False
+            print(f"Do not Use DataParallel")
     else:
-        args.use_data_parallel = False
-        print(f"Do not Use DataParallel")
+        print("Use CPU")
+    
         
     if args.GPU_memory != 16:
         args.batch_size = args.batch_size * int(args.GPU_memory / 16)
@@ -276,6 +282,12 @@ def get_parameters():
     args.num_dist = len(args.diff_dist)
     args.Lvy = Lvy
     args.Lyy = Lyy
+    
+    # for benchmark
+    if args.v in ['EnKF','ESRF','LETKF']:
+        args.colorbar_range = DATASET_INFO[args.dataset]['colorbar_range']
+    else:
+        args.colorbar_range = None
     
     # Save folder
     if args.cp_load_path != "no":

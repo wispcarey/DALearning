@@ -23,7 +23,7 @@ def compute_es(ens_states, true_states, norm_p=1):
     # Compute the average distance from each ensemble member to the ground truth.
     true_expanded = true_states.unsqueeze(2)  # [T, B, 1, D]
     # Compute distances: shape [T, B, N]
-    dist_to_true = torch.norm(ens_states - true_expanded, p=norm_p, dim=-1)
+    dist_to_true = torch.pow(torch.norm(ens_states - true_expanded, p=norm_p, dim=-1), norm_p)
     # Compute (1 / N) * sum_{i=1}^N ||x_i - y||
     term_obs = (1 / N) * torch.sum(dist_to_true, dim=2)  # [T, B]
     
@@ -34,7 +34,7 @@ def compute_es(ens_states, true_states, norm_p=1):
         xi = ens_states[:, :, i, :]  # [T, B, D]
         for j in range(i + 1, N):
             xj = ens_states[:, :, j, :]  # [T, B, D]
-            dist_pair = torch.norm(xi - xj, p=norm_p, dim=-1)  # [T, B]
+            dist_pair = torch.pow(torch.norm(xi - xj, p=norm_p, dim=-1), norm_p)  # [T, B]
             total_pair += dist_pair
     # There are N*(N-1)/2 distinct pairs; compute average of all distinct pairs,
     # then multiply by 2 to obtain (1/(N*(N-1))) * sum_{i != j} ||x_i - x_j||
@@ -219,23 +219,42 @@ if __name__ == "__main__":
     ens_states = torch.randn(time_steps, batch_size, ensemble_size, feature_dim)
     true_states = torch.randn(time_steps, batch_size, feature_dim)
     
-    # Compute Energy Score (standard version)
-    es_result = compute_es(ens_states, true_states)
+    # ------------------------------------------------------------------
+    # Compare losses: L2 vs. Energy Score (p = 2) and
+    #                 Normalized L2 vs. Normalized Energy Score (p = 2)
+    # ------------------------------------------------------------------
+
+    # L2 and Energy Score
+    l2_loss = compute_loss(ens_states, true_states, loss_type='l2')
+    es_loss = compute_loss(ens_states, true_states, loss_type='es', norm_p=2)
+
+    # Normalized L2 and Normalized Energy Score
+    nl2_loss = compute_loss(ens_states, true_states, loss_type='nl2')
+    nes_loss = compute_loss(ens_states, true_states, loss_type='nes', norm_p=2)
+
+    # Print the results for quick inspection
+    print(f"L2 loss                     : {l2_loss.item():.6f}")
+    print(f"Energy Score   (p = 2)      : {es_loss.item():.6f}")
+    print(f"Normalized L2 loss          : {nl2_loss.item():.6f}")
+    print(f"Normalized Energy Score (p=2): {nes_loss.item():.6f}")
     
-    # Compute Kernel Energy Score
-    kes_result = compute_kernel_es(ens_states, true_states, sigma=None)
+    # # Compute Energy Score (standard version)
+    # es_result = compute_es(ens_states, true_states)
     
-    # Print input and output dimensions.
-    print("Input dimensions:")
-    print(f"  ens_states: {ens_states.shape}")
-    print(f"  true_states: {true_states.shape}")
-    print("Output dimensions:")
-    print(f"  Energy Score: {es_result.shape}")
-    print(f"  Kernel Energy Score: {kes_result.shape}")
+    # # Compute Kernel Energy Score
+    # kes_result = compute_kernel_es(ens_states, true_states, sigma=None)
     
-    # Verify output dimension is as expected: should be [time_steps, batch_size]
-    expected_shape = torch.Size([time_steps, batch_size])
-    assert es_result.shape == expected_shape, f"Expected shape {expected_shape}, got {es_result.shape}"
-    assert kes_result.shape == expected_shape, f"Expected shape {expected_shape}, got {kes_result.shape}"
+    # # Print input and output dimensions.
+    # print("Input dimensions:")
+    # print(f"  ens_states: {ens_states.shape}")
+    # print(f"  true_states: {true_states.shape}")
+    # print("Output dimensions:")
+    # print(f"  Energy Score: {es_result.shape}")
+    # print(f"  Kernel Energy Score: {kes_result.shape}")
     
-    print("Test passed! Output dimensions are correct.")
+    # # Verify output dimension is as expected: should be [time_steps, batch_size]
+    # expected_shape = torch.Size([time_steps, batch_size])
+    # assert es_result.shape == expected_shape, f"Expected shape {expected_shape}, got {es_result.shape}"
+    # assert kes_result.shape == expected_shape, f"Expected shape {expected_shape}, got {kes_result.shape}"
+    
+    # print("Test passed! Output dimensions are correct.")

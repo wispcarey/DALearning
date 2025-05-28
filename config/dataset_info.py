@@ -16,6 +16,7 @@ DATASET_INFO = {
         'train_steps': 60,
         'train_traj_num': 8192,
         'sigma_ens': 0.1,
+        'colorbar_range': None,
     },
     'lorenz96': {
         'dim': 40,
@@ -32,6 +33,7 @@ DATASET_INFO = {
         'train_steps': 60,
         'train_traj_num': 8192,
         'sigma_ens': 1,
+        'colorbar_range': (-10,15),
     },
     'ks': {
         'dim': 128,
@@ -48,5 +50,6 @@ DATASET_INFO = {
         'train_steps': 60,
         'train_traj_num': 8192,
         'sigma_ens': 1,
+        'colorbar_range': (-6,6)
     }
 }

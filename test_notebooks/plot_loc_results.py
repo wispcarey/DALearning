@@ -5,19 +5,12 @@ import numpy as np
 import pandas as pd
 import torch
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-from torch.utils.data import Dataset, DataLoader
 from PIL import Image
+import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
 
 # Add the parent directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from utils import plot_results_3d, plot_results_2d
-from utils import partial_obs_operator, get_mean_std
-from config.dataset_info import DATASET_INFO
-
-from networks import ComplexAttentionModel, AttentionModel
-from localization import plot_GC, pairwise_distances
 
 NAN_VALS = {
     'rmse':{
@@ -145,6 +138,7 @@ def calculate_gc(radius, x):
     
     return coeffs
 
+
 def plot_gc_and_curves(A, B, save_dir='../save/figures'):
     """
     Plot GC functions and curves based on the given arrays A and B.
@@ -194,11 +188,12 @@ def plot_gc_and_curves(A, B, save_dir='../save/figures'):
                 suffix = "10"
             else:
                 suffix = "07"
-            filename = f"loc_plot_{ENSEMBLE_SIZE[j]}_{suffix}.png"
+            filename = f"loc_plot_{ENSEMBLE_SIZE[j]}_{suffix}"
             filepath = os.path.join(save_dir, filename)
             
             # Save figure with no border and no padding
-            plt.savefig(filepath, bbox_inches='tight', pad_inches=0)
+            plt.savefig(f"{filepath}.png", bbox_inches='tight', pad_inches=0)
+            plt.savefig(f"{filepath}.pdf", bbox_inches='tight', pad_inches=0)
             plt.close()
             
             # Store filename for reference
@@ -332,6 +327,41 @@ def plot_results_all(args):
     # Create combined grid for selected ensemble sizes
     create_combined_grid(args.dataset, args.ensemble_sizes)
 
+def create_standalone_legend(save_dir='../save/figures', filename="standalone_legend.pdf"):
+    os.makedirs(save_dir, exist_ok=True)
+    
+    fig_legend = plt.figure(figsize=(5, 0.5)) # Adjust figsize as needed for layout
+    ax_legend = fig_legend.add_subplot(111)
+    ax_legend.axis('off')
+
+    # Create handles for the legend
+    # 1. Red line with error band
+    # We'll use a Line2D for the line and a Patch for the error band fill
+    # To combine them into one legend entry, we pass them as a tuple.
+    red_line_handle = mlines.Line2D([], [], color='red', linewidth=1.5)
+    red_fill_handle = mpatches.Patch(facecolor='red', alpha=0.3, edgecolor='red') # edgecolor can make it look more like the plot
+    
+    # 2. Blue line
+    blue_line_handle = mlines.Line2D([], [], color='blue', linewidth=2)
+
+    # Create the legend
+    # For the red entry, we provide a tuple of (fill, line) for the handle
+    # This tells matplotlib to draw the line on top of the patch for that legend key
+    fig_legend.legend(
+        handles=[(red_fill_handle, red_line_handle), blue_line_handle], 
+        labels=[r'Learned $g_\theta$ (mean $\pm$ std)', 'Gaspari-Cohn Function'], 
+        loc='center', 
+        ncol=2, 
+        frameon=False,
+        fontsize='medium',
+        handlelength=2, # Adjust length of the legend handles
+        handletextpad=0.8 # Adjust padding between handle and text
+    )
+    
+    filepath = os.path.join(save_dir, filename)
+    fig_legend.savefig(filepath, bbox_inches='tight', pad_inches=0.05)
+    plt.close(fig_legend)
+    print(f"Standalone legend saved to {filepath}")
 
 if __name__ == "__main__":
     # Initialize argument parser
@@ -359,6 +389,9 @@ if __name__ == "__main__":
     
     # Run the main function
     plot_results_all(args)
+    
+    create_standalone_legend()
+    
     
     # # If specific ensemble sizes were provided, create a custom combined grid
     # if args.ensemble_sizes:

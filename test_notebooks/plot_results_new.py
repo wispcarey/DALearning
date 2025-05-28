@@ -13,9 +13,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
 TICK_STEPSIZE = {
-    'lorenz63':[0.25,0.02],
-    'lorenz96':[0.5,0.15],
-    'ks':[0.5,0.2]
+    'lorenz63':[0.25,0.04],
+    'lorenz96':[0.5,0.3],
+    'ks':[0.5,0.4]
 }
 
 ENSEMBLE_SIZE = [5,10,15,20,40,60,100]
@@ -70,17 +70,19 @@ COLOR_DICT = {
     'LETKF': "red",
     'ESRF': "cyan",
     'EnKF': "orange",
-    'IEnKF': "Brown",
+    'IEnKF': "brown",
     'MLEF': "purple"
 }
 
-plt.rc('font', size=20)
+# Default font size will be overridden by tick_fontsize parameter
 
 def replace_nan_with_value(nparray, value=6):
+    """Replace NaN values in numpy array with specified value"""
     nparray[np.isnan(nparray)] = value
     return nparray
 
 def collect_results(args):
+    """Collect neural network results from saved files"""
     folder_list = DATASET_FOLDERS[args.dataset]
     
     results = np.zeros((4, len(ENSEMBLE_SIZE), 5), dtype=float)
@@ -126,47 +128,50 @@ def plot_with_type(x_inds, mean_values, std_values, key, args, ax=None, highligh
     else:
         label = f"{key}"
     
+    alpha = 0.7
     # Determine plot type based on args.type
     if args.plot_type == 'mean_std':
         # Plot with error bars showing standard deviation
         line = ax.errorbar(
             x_inds, mean_values, yerr=std_values,
             linestyle='-', capsize=3, capthick=2, 
-            color=color, marker='D', linewidth=2, 
-            alpha=0.75, label=label
+            color=color, marker='D', markersize=args.marker_size,
+            linewidth=args.line_width, 
+            alpha=alpha, label=label, 
         )
     elif args.plot_type == 'mean':
         # Plot only the mean values
         line, = ax.plot(
             x_inds, mean_values,
-            linestyle='-', color=color, marker='D', 
-            linewidth=2, alpha=0.75, label=label
+            linestyle='-', color=color, marker='D', markersize=args.marker_size,
+            linewidth=args.line_width, alpha=alpha, label=label
         )
     elif args.plot_type == 'std':
         # Plot only the standard deviation values
         line, = ax.plot(
             x_inds, std_values,
-            linestyle='--', color=color, marker='o', 
-            linewidth=1.5, alpha=0.6, label=label
+            linestyle='--', color=color, marker='o', markersize=args.marker_size,
+            linewidth=args.line_width, alpha=alpha, label=label
         )
     else:
         # Default to mean_std if args.type is not recognized
         line = ax.errorbar(
             x_inds, mean_values, yerr=std_values,
             linestyle='-', capsize=3, capthick=2, 
-            color=color, marker='D', linewidth=2, 
-            alpha=0.75, label=label
+            color=color, marker='D', markersize=args.marker_size,
+            linewidth=args.line_width, 
+            alpha=alpha, label=label
         )
     
     return line
 
 def get_benchmarks(args):
     """
-    This function processes benchmark data from a CSV file, splitting it by `sigma_y` values 1 and 0.7,
-    and extracting specific columns for each `method`, then combining them into a 2*N*5 numpy array.
+    Process benchmark data from CSV file, splitting by sigma_y values 1 and 0.7,
+    and extracting specific columns for each method, then combining them into a 2*N*5 numpy array.
     
     Args:
-        args: An object or namespace with a `dataset` attribute specifying the dataset name.
+        args: An object or namespace with a dataset attribute specifying the dataset name.
         
     Returns:
         result_dict: A dictionary where each key is a method, and the value is a 2*N*5 numpy array.
@@ -212,7 +217,40 @@ def get_benchmarks(args):
 
     return result_dict, rmse_max, rrmse_max
 
+def save_legend(args):
+    """Save a separate horizontal legend containing all methods"""
+    fig, ax = plt.subplots(figsize=(12, 2))
+    ax.axis('off')
+    
+    # Create dummy plots for legend
+    legend_items = ['Pretrain', 'Tuned', 'EnKF', 'ESRF', 'IEnKF']
+    if args.dataset != 'lorenz63':
+        legend_items.insert(-1, 'LETKF')  # Insert LETKF before IEnKF
+    
+    lines = []
+    for item in legend_items:
+        if item in ['Pretrain', 'Tuned']:
+            item_name = rf"$\mathbf{{{item}}}^*$"
+        else:
+            item_name = item
+        line, = ax.plot([], [], linestyle='-', color=COLOR_DICT[item], 
+                       marker='D', linewidth=args.line_width, alpha=0.75, label=item_name)
+        lines.append(line)
+    
+    # Create horizontal legend
+    legend = ax.legend(handles=lines, loc='center', ncol=len(legend_items), 
+                      frameon=False, fontsize=args.tick_fontsize)
+    
+    # Save the legend
+    plt.savefig(os.path.join('../save/figures', f'{args.dataset}_legend.pdf'), 
+                bbox_inches='tight', dpi=300, pad_inches=0.1)
+    plt.savefig(os.path.join('../save/figures', f'{args.dataset}_legend.png'), 
+                bbox_inches='tight', dpi=300, pad_inches=0.1)
+    print("Legend saved to", os.path.join('../save/figures', f'{args.dataset}_legend.png'))
+    plt.close()
+
 def plot_results_all(args):
+    """Main plotting function for all results"""
     
     x_inds = ENSEMBLE_SIZE
     
@@ -221,8 +259,8 @@ def plot_results_all(args):
     
     tick_stepsize = TICK_STEPSIZE[args.dataset]
     
-    nan_rmse_val = (int(np.maximum(nn_rmse_max, b_rmse_max) / tick_stepsize[0]) + 1) * tick_stepsize[0]
-    nan_rrmse_val = (int(np.maximum(nn_rrmse_max, b_rrmse_max) / tick_stepsize[1]) + 1) * tick_stepsize[1]
+    nan_rmse_val = (int(np.maximum(nn_rmse_max, b_rmse_max) / tick_stepsize[0]) + 0.5) * tick_stepsize[0]
+    nan_rrmse_val = (int(np.maximum(nn_rrmse_max, b_rrmse_max) / tick_stepsize[1]) + 0.5) * tick_stepsize[1]
     
     dataset_name = args.dataset.upper()
     if args.plot_type == 'mean_std':
@@ -252,58 +290,18 @@ def plot_results_all(args):
 
     nan_replace_vals = [nan_rmse_val, 0, nan_rrmse_val, 0]
     
-    # R-RMSE
-    fig1 = plt.figure(1, figsize=(13, 5.5)) 
-    fig2 = plt.figure(2, figsize=(13, 5.5)) 
-    fig3 = plt.figure(3, figsize=(13, 5.5))
-    fig4 = plt.figure(4, figsize=(13, 5.5))
+    # R-RMSE plots
+    figsize = (10,5)
+    fig1 = plt.figure(1, figsize=figsize) 
+    fig2 = plt.figure(2, figsize=figsize) 
+    fig3 = plt.figure(3, figsize=figsize)
+    fig4 = plt.figure(4, figsize=figsize)
     
     value_max = np.zeros((2,2))
     value_min = 100 * np.ones((2,2))
-    nan_in_ours = np.zeros(2, dtype=bool)
     
     std_record = {'dataset':dataset_name}
-    for key, value in nn_results.items():
-        if key.startswith('Tuned'):
-            ours_best = value
-        # change nan to values
-        nan_in_ours = np.logical_or(nan_in_ours, np.any(np.isnan(value), axis=(1,2)))
-        
-        for i in [0,1,2,3]:
-            value[:, :, i] = replace_nan_with_value(value[:, :, i], nan_replace_vals[i])
-
-        max_val = np.max(value[:,:,[0,2]], axis=1)
-        value_max = np.maximum(max_val, value_max)
-                
-        mean_rmse_1, std_rmse_1, mean_rrmse_1, std_rrmse_1, nan_exists_1 = value[0, :, 0], value[0, :, 1], value[0, :, 2], value[0, :, 3], value[0, :, 4]
-
-        
-        print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=1$:", mean_rmse_1)
-
-        plt.figure(1)
-        plot_with_type(x_inds, mean_rmse_1, std_rmse_1, key, args, highlight_key=True)
-        
-        plt.figure(2)
-        plot_with_type(x_inds, mean_rrmse_1, std_rrmse_1, key, args, highlight_key=True)
-        
-        if args.require_rmse:
-            std_record[f'{key}_10_rmse'] = np.nanmean(std_rmse_1)
-        std_record[f'{key}_10_rrmse'] = np.nanmean(std_rrmse_1)
-        
-        mean_rmse_07, std_rmse_07, mean_rrmse_07, std_rrmse_07, nan_exists_07 = value[1, :, 0], value[1, :, 1], value[1, :, 2], value[1, :, 3], value[1, :, 4]
-        
-        print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=0.7$:", mean_rmse_07)
-
-
-        plt.figure(3)
-        plot_with_type(x_inds, mean_rmse_07, std_rmse_07, key, args, highlight_key=True)
-        
-        plt.figure(4)
-        plot_with_type(x_inds, mean_rrmse_07, std_rrmse_07, key, args, highlight_key=True)
-        
-        if args.require_rmse:
-            std_record[f'{key}_07_rmse'] = np.nanmean(std_rmse_07)
-        std_record[f'{key}_07_rrmse'] = np.nanmean(std_rrmse_07)
+    
             
     nan_in_others = np.zeros(2, dtype=bool)
     other_results = {}
@@ -347,6 +345,48 @@ def plot_results_all(args):
         if args.require_rmse:
             std_record[f'{key}_07_rmse'] = np.nanmean(std_rmse_07)
         std_record[f'{key}_07_rrmse'] = np.nanmean(std_rrmse_07)
+    
+    nan_in_ours = np.zeros(2, dtype=bool)
+    for key, value in nn_results.items():
+        if key.startswith('Tuned'):
+            ours_best = value
+        # change nan to values
+        nan_in_ours = np.logical_or(nan_in_ours, np.any(np.isnan(value), axis=(1,2)))
+        
+        for i in [0,1,2,3]:
+            value[:, :, i] = replace_nan_with_value(value[:, :, i], nan_replace_vals[i])
+
+        max_val = np.max(value[:,:,[0,2]], axis=1)
+        value_max = np.maximum(max_val, value_max)
+                
+        mean_rmse_1, std_rmse_1, mean_rrmse_1, std_rrmse_1, nan_exists_1 = value[0, :, 0], value[0, :, 1], value[0, :, 2], value[0, :, 3], value[0, :, 4]
+
+        
+        print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=1$:", mean_rmse_1)
+
+        plt.figure(1)
+        plot_with_type(x_inds, mean_rmse_1, std_rmse_1, key, args, highlight_key=True)
+        
+        plt.figure(2)
+        plot_with_type(x_inds, mean_rrmse_1, std_rrmse_1, key, args, highlight_key=True)
+        
+        if args.require_rmse:
+            std_record[f'{key}_10_rmse'] = np.nanmean(std_rmse_1)
+        std_record[f'{key}_10_rrmse'] = np.nanmean(std_rrmse_1)
+        
+        mean_rmse_07, std_rmse_07, mean_rrmse_07, std_rrmse_07, nan_exists_07 = value[1, :, 0], value[1, :, 1], value[1, :, 2], value[1, :, 3], value[1, :, 4]
+        
+        print(f"RMSE {key} for {args.dataset} with " + r"$\sigma_y=0.7$:", mean_rmse_07)
+
+        plt.figure(3)
+        plot_with_type(x_inds, mean_rmse_07, std_rmse_07, key, args, highlight_key=True)
+        
+        plt.figure(4)
+        plot_with_type(x_inds, mean_rrmse_07, std_rrmse_07, key, args, highlight_key=True)
+        
+        if args.require_rmse:
+            std_record[f'{key}_07_rmse'] = np.nanmean(std_rmse_07)
+        std_record[f'{key}_07_rrmse'] = np.nanmean(std_rrmse_07)
 
     
     if args.dataset == 'lorenz63':
@@ -368,21 +408,23 @@ def plot_results_all(args):
         vmax = value_max[i]
         vmin = value_min[i] 
         if nan_in_ours[i//2] or nan_in_others[i//2]:
-            y_ticks = list(np.arange(int(vmin / ticksize) * ticksize, nan_val + ticksize, ticksize))
+            y_ticks = list(np.arange(int(vmin / ticksize + 0.5) * ticksize, nan_val + ticksize/2, ticksize))
             if int(nan_val) != nan_val:
                 y_ticks.append(nan_val)
             new_y_ticks = ["NaN" if y == nan_val else f"{y:.2f}".rstrip('0').rstrip('.') if '.' in f"{y:.2f}" else f"{y}" for y in y_ticks]
         else:
-            y_ticks = list(np.arange(int(vmin / ticksize) * ticksize, vmax + ticksize, ticksize))
+            y_ticks = list(np.arange(int(vmin / ticksize + 0.5) * ticksize, vmax + ticksize/2, ticksize))
             new_y_ticks = [f"{y:.2f}".rstrip('0').rstrip('.') if '.' in f"{y:.2f}" else f"{y}" for y in y_ticks]
             
-        plt.yticks(ticks=y_ticks, labels=new_y_ticks)
+        plt.yticks(ticks=y_ticks, labels=new_y_ticks, fontsize=args.tick_fontsize)
+        # Remove legend from individual plots
         # plt.legend(loc='upper right')
-        plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+        # plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
         # plt.title(titles[i])
-        plt.xlabel("Ensemble Size")
-        plt.ylabel(y_labels[i])
-        plt.xticks(ENSEMBLE_SIZE)
+        # Remove x and y labels
+        # plt.xlabel("Ensemble Size")
+        # plt.ylabel(y_labels[i])
+        plt.xticks(ENSEMBLE_SIZE, fontsize=args.tick_fontsize)
         plt.grid(True)
         plt.tight_layout()
         
@@ -393,66 +435,105 @@ def plot_results_all(args):
             print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_{save_figure_suffix[i]}.png"))
         plt.close()  
     
-    # Relative improvement plot
-    plt.figure(figsize=(13, 5.5))
+    # Relative improvement plots - split into sigma_y=1.0 and sigma_y=0.7
+    # Plot for sigma_y=1.0
+    plt.figure(figsize=figsize)
 
-    # Calculate relative improvement
+    # Calculate relative improvement for sigma_y=1.0
     relative_imp_1_enkf = (other_results['EnKF'][0,:,2] - ours_best[0,:,2]) / other_results['EnKF'][0,:,2]
-    relative_imp_07_enkf = (other_results['EnKF'][1,:,2] - ours_best[1,:,2]) / other_results['EnKF'][1,:,2]
-    # Plot relative improvement
-    plt.plot(x_inds, relative_imp_1_enkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"EnKF $\sigma_y=1$")
-    plt.plot(x_inds, relative_imp_07_enkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"EnKF $\sigma_y=0.7$")
-    
-    min_val = np.minimum(np.min(relative_imp_07_enkf), np.min(relative_imp_1_enkf))
-    
     relative_imp_1_ienkf = (other_results['IEnKF'][0,:,2] - ours_best[0,:,2]) / other_results['IEnKF'][0,:,2]
-    relative_imp_07_ienkf = (other_results['IEnKF'][1,:,2] - ours_best[1,:,2]) / other_results['IEnKF'][1,:,2]
-    # Plot relative improvement
-    plt.plot(x_inds, relative_imp_1_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"IEnKF $\sigma_y=1$")
-    plt.plot(x_inds, relative_imp_07_ienkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"IEnKF $\sigma_y=0.7$")
     
-    min_val = np.minimum(min_val, np.minimum(np.min(relative_imp_07_ienkf), np.min(relative_imp_1_ienkf)))
+    # Plot relative improvement with consistent colors
+    plt.plot(x_inds, relative_imp_1_enkf, linestyle='-', marker='o', markersize=args.marker_size, 
+             linewidth=args.line_width, color=COLOR_DICT['EnKF'], label="EnKF")
+    plt.plot(x_inds, relative_imp_1_ienkf, linestyle='-', marker='o', markersize=args.marker_size, 
+             linewidth=args.line_width, color=COLOR_DICT['IEnKF'], label="IEnKF")
+    
+    min_val_1 = np.minimum(np.min(relative_imp_1_enkf), np.min(relative_imp_1_ienkf))
     
     if args.dataset != 'lorenz63':
         relative_imp_1_letkf = (other_results['LETKF'][0,:,2] - ours_best[0,:,2]) / other_results['LETKF'][0,:,2]
-        relative_imp_07_letkf = (other_results['LETKF'][1,:,2] - ours_best[1,:,2]) / other_results['LETKF'][1,:,2]
-        plt.plot(x_inds, relative_imp_1_letkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"LETKF $\sigma_y=1$")
-        plt.plot(x_inds, relative_imp_07_letkf, linestyle='-', marker='o', markersize=8, linewidth=3, label=r"LETKF $\sigma_y=0.7$")
-        
-        min_val = np.minimum(min_val, np.minimum(np.min(relative_imp_07_letkf), np.min(relative_imp_1_letkf)))
-    # plt.legend(loc='upper right')
-    plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+        plt.plot(x_inds, relative_imp_1_letkf, linestyle='-', marker='o', markersize=args.marker_size, 
+                 linewidth=args.line_width, color=COLOR_DICT['LETKF'], label="LETKF")
+        min_val_1 = np.minimum(min_val_1, np.min(relative_imp_1_letkf))
 
-    # Set x and y labels
-    plt.xlabel("Ensemble Size")
-    plt.ylabel("Relative Improvement (%)")
+    # Remove legend and labels
+    # plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+    # plt.xlabel("Ensemble Size")
+    # plt.ylabel("Relative Improvement (%)")
 
     # Set x ticks
-    plt.xticks([5, 10, 15, 20, 40, 60, 100])
+    plt.xticks([5, 10, 15, 20, 40, 60, 100], fontsize=args.tick_fontsize)
 
     # Set y axis to start at 0 and format as percentage
-    plt.gca().yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))  # Convert values to percentage format
+    plt.gca().yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+    plt.yticks(fontsize=args.tick_fontsize)
 
-    if min_val > 0:
-        plt.gca().set_ylim(0, None)  # Ensure y-axis starts from 0
-
+    if min_val_1 > 0:
+        plt.gca().set_ylim(0, None)
 
     # Add grid
     plt.grid(True)
-
-    # Set the title based on dataset
-    # plt.title(f"{args.dataset.upper()}: Relative improvement"
-    #         r"$\dfrac{\mathrm{RMSE}_{\mathrm{Benchmark}} - \mathrm{RMSE}_{\mathrm{Ours}}}{\mathrm{RMSE}_{\mathrm{Benchmark}}}$ v.s. Ensemble size")
-    # plt.title(f"{args.dataset.upper()}: Relative improvement v.s. Ensemble size")
     plt.tight_layout()
 
-    # Save the figure
-    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp.pdf"), 
-            bbox_inches="tight", dpi=300)
-    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp.png"), 
-            bbox_inches="tight", dpi=300)
-    print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_Relative_Imp.png"))
+    # Save the figure for sigma_y=1.0
+    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_1.0.pdf"), 
+                bbox_inches="tight", dpi=300)
+    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_1.0.png"), 
+                bbox_inches="tight", dpi=300)
+    print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_1.0.png"))
     plt.close()
+
+    # Plot for sigma_y=0.7
+    plt.figure(figsize=figsize)
+
+    # Calculate relative improvement for sigma_y=0.7
+    relative_imp_07_enkf = (other_results['EnKF'][1,:,2] - ours_best[1,:,2]) / other_results['EnKF'][1,:,2]
+    relative_imp_07_ienkf = (other_results['IEnKF'][1,:,2] - ours_best[1,:,2]) / other_results['IEnKF'][1,:,2]
+    
+    # Plot relative improvement with consistent colors
+    plt.plot(x_inds, relative_imp_07_enkf, linestyle='-', marker='o', markersize=args.marker_size, 
+             linewidth=args.line_width, color=COLOR_DICT['EnKF'], label="EnKF")
+    plt.plot(x_inds, relative_imp_07_ienkf, linestyle='-', marker='o', markersize=args.marker_size, 
+             linewidth=args.line_width, color=COLOR_DICT['IEnKF'], label="IEnKF")
+    
+    min_val_07 = np.minimum(np.min(relative_imp_07_enkf), np.min(relative_imp_07_ienkf))
+    
+    if args.dataset != 'lorenz63':
+        relative_imp_07_letkf = (other_results['LETKF'][1,:,2] - ours_best[1,:,2]) / other_results['LETKF'][1,:,2]
+        plt.plot(x_inds, relative_imp_07_letkf, linestyle='-', marker='o', markersize=args.marker_size, 
+                 linewidth=args.line_width, color=COLOR_DICT['LETKF'], label="LETKF")
+        min_val_07 = np.minimum(min_val_07, np.min(relative_imp_07_letkf))
+
+    # Remove legend and labels
+    # plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+    # plt.xlabel("Ensemble Size")
+    # plt.ylabel("Relative Improvement (%)")
+
+    # Set x ticks
+    plt.xticks([5, 10, 15, 20, 40, 60, 100], fontsize=args.tick_fontsize)
+
+    # Set y axis to start at 0 and format as percentage
+    plt.gca().yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
+    plt.yticks(fontsize=args.tick_fontsize)
+
+    if min_val_07 > 0:
+        plt.gca().set_ylim(0, None)
+
+    # Add grid
+    plt.grid(True)
+    plt.tight_layout()
+
+    # Save the figure for sigma_y=0.7
+    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_0.7.pdf"), 
+                bbox_inches="tight", dpi=300)
+    plt.savefig(os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_0.7.png"), 
+                bbox_inches="tight", dpi=300)
+    print("Image saved to", os.path.join('../save/figures', f"{args.dataset}_Relative_Imp_0.7.png"))
+    plt.close()
+
+    # Save unified legend
+    save_legend(args)
 
     if args.save_csv:
         df = pd.DataFrame([std_record])
@@ -497,6 +578,25 @@ if __name__ == "__main__":
         '--save_csv', 
         action='store_true',
         help='Output to a csv'
+    )
+    parser.add_argument(
+        '--tick_fontsize',
+        type=int,
+        default=25,
+        help='Font size for x and y axis ticks (default: 25)'
+    )
+    parser.add_argument(
+        '--line_width',
+        type=float,
+        default=3,
+        help='Width of all lines in plots (default: 3)'
+    )
+    
+    parser.add_argument(
+        '--marker_size',
+        type=float,
+        default=8,
+        help='Size of markers in plots (default: 8)'
     )
     
     args = parser.parse_args()

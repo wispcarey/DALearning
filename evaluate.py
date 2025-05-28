@@ -8,7 +8,7 @@ from config.cli import get_parameters
 from utils import setup_optimizer_and_scheduler, load_checkpoint
 from utils import partial_obs_operator, get_dataloader, redirect_output
 
-from training_utils import test_model, set_models
+from train_test_utils import test_model, set_models
 
 
 if __name__ == "__main__":
@@ -57,7 +57,7 @@ if __name__ == "__main__":
         print("Test NN Results")
         loss_list_nn = []
         mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
-            test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_{args.N}')
+            test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_{args.N}', save_pdf=True)
         print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
         print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
         print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")

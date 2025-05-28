@@ -9,7 +9,7 @@ from config.cli import get_parameters
 from utils import setup_optimizer_and_scheduler, save_checkpoint, load_checkpoint
 from utils import partial_obs_operator, get_dataloader, redirect_output
 
-from training_utils import train_model, test_model, set_models
+from train_test_utils import train_model, test_model, set_models
 
 
 if __name__ == "__main__":
@@ -60,7 +60,7 @@ if __name__ == "__main__":
             rmse_list, rrmse_list = [], []
             for i in range(args.test_rounds):
                 mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
-                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}')
+                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}', save_pdf=False)
                 rmse_list.append(mean_rmse_nn)
                 rrmse_list.append(mean_rrmse_nn)
             print("Average RMSE:", torch.mean(torch.tensor(rmse_list)))
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         else:
             print("Training Start")
             mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
-                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_0')
+                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_0', save_pdf=False)
             print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
             print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
             print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
@@ -82,7 +82,7 @@ if __name__ == "__main__":
                 train_loss_list.append(train_loss)
                 if epoch % args.save_epoch == 0:
                     mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
-                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_{epoch}')
+                        test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_{epoch}', save_pdf=False)
                     print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
                     print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
                     print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
