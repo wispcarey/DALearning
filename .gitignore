@@ -1,7 +1,7 @@
-save/
 data/
 old codes/
 other codes/
+test_notebooks/
 
 # Ignore Python bytecode files
 *.pyc

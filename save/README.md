@@ -1,0 +1,1 @@
+You can download our **trained checkpoint** from [Google Drive](https://drive.google.com/drive/folders/1vwJEpIQI8qr1wTOmrHCEXYrySab9Wbky?usp=sharing).
