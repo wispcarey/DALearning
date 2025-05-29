@@ -20,7 +20,7 @@ if __name__ == "__main__":
         os.makedirs(args.save_folder)
 
     # redirect output
-    with redirect_output(args.save_folder, filename="ft_output.txt"):
+    with redirect_output(args.save_folder, filename="ft_output.txt", enable_redirect=args.redirect_output):
         # folder name
         folder_name = args.save_folder
         
@@ -81,7 +81,7 @@ if __name__ == "__main__":
                 print("Test Only")
                 rmse_list, rrmse_list = [], []
                 for i in range(args.test_rounds):
-                    mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
+                    mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
                             test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}')
                     rmse_list.append(mean_rmse_nn)
                     rrmse_list.append(mean_rrmse_nn)
@@ -89,12 +89,11 @@ if __name__ == "__main__":
                 print("Average R-RMSE:", torch.mean(torch.tensor(rrmse_list)))
             else:
                 print(f"Fine-tuning start with the ensemble size N = {N}")
-                mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
+                mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
                     test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_0')
                 print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
                 print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
                 print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
-                print(f"CRPS: {mean_crps_nn:.3f} ± {std_crps_nn:.3f}")
                 print(f'No NAN Percentage: {no_nan_percent_nn * 100: .2f}%')
                 test_rmse_list.append(mean_rmse_nn)
                 test_rrmse_list.append(mean_rrmse_nn)
@@ -103,12 +102,11 @@ if __name__ == "__main__":
                     train_loss = train_model(epoch, train_loader, model_list, optimizer, scheduler, args, H_info=H_info)
                     train_loss_list.append(train_loss)
                     if epoch % args.save_epoch == 0:
-                        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
+                        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
                             test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_only_{args.N}_{epoch}')
                         print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
                         print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
                         print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
-                        print(f"CRPS: {mean_crps_nn:.3f} ± {std_crps_nn:.3f}")
                         test_epochs.append(epoch)
                         test_rmse_list.append(mean_rmse_nn)
                         test_rrmse_list.append(mean_rrmse_nn)

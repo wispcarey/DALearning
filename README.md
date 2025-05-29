@@ -1,56 +1,71 @@
-# DALearning
+# Learning Enhanced Ensemble Filters
 
-This repository provides a collection of methods that enhance data assimilation using various machine learning techniques. Most of the approaches are based on the Set Transformer architecture.
+This is the code repository for our paper ["Learning Enhanced Ensemble Filters"](https://arxiv.org/abs/2504.17836). It contains the complete implementation of our proposed method, Measure Neural Mapping enhanced Ensemble Filter (MNMEF), along with related test code and code for benchmark methods.
 
-## Quick Start Examples
+## Installation and Setup
 
-To quickly start training a model, refer to the script: `scripts/run_train.sh`.
+Follow these steps to set up the project environment:
 
-For example, if you want to train a model on the Lorenz 96 system with an ensemble size of N=10 and observation noise σ<sub>y</sub>=1, you can use the following command:
+1.  **Prerequisites:**
+    * Ensure you have Python 3.12 installed on your system.
+
+2.  **Create a virtual environment:**
+    Open your terminal or command prompt, navigate to the project's root directory, and run the following command to create a virtual environment named `.venv`:
+    ```bash
+    python3.12 -m venv .venv
+    ```
+    If `python3` or `python` is already aliased to your Python 3.12 installation, you might be able to use:
+    ```bash
+    python -m venv .venv
+    ```
+
+3.  **Activate the virtual environment:**
+
+    * **On macOS and Linux:**
+        ```bash
+        source .venv/bin/activate
+        ```
+    * **On Windows (Command Prompt):**
+        ```bash
+        .\.venv\Scripts\activate
+        ```
+    * **On Windows (PowerShell):**
+        ```bash
+        .venv\Scripts\Activate.ps1
+        ```
+    You should see the name of the virtual environment (`.venv`) appear at the beginning of your command prompt, indicating it's active.
+
+4.  **Install dependencies:**
+    Once the virtual environment is activated, install the required packages using the `requirements.txt` file:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+
+## Important Notes
+
+* **Dataset Information:** The current codebase supports three datasets: the Kuramoto-Sivashinsky (KS) equation, the Lorenz '96 model, and the Lorenz '63 model. Please be aware that the first time you run the code, it may take a significant amount of time as it needs to construct the datasets. Subsequently, these datasets will be saved in the `data/` directory for faster access.
+
+* **Pre-trained Models:** We provide our pre-trained models, as well as models that have been fine-tuned for different ensemble sizes. You can download these models from our <font color="red">[Google Drive]</font>. After downloading, place the model files into the `save/` directory to use them.
+
+* **Configuration Details:** You can find detailed settings for our training parameters in the `config/cli.py` file. We use different default parameters for each dataset. These dataset-specific default configurations are referenced in `config/dataset_info.py`.
+
+## Usage
+
+**To train a new model from scratch**, use the `train.py` script. For example, to train a model on the Kuramoto-Sivashinsky (KS) system with an ensemble size `N=10` and an observation noise standard deviation `sigma_y=1.0`, execute the following command:
 
 ```bash
-python train.py --dataset lorenz96 --N 10 --sigma_y 1
+python train.py --dataset ks --N 10 --sigma_y 1
 ```
+You can also find more examples and scripts for batch training in `scripts/run_train.sh`.
 
-To fine-tune a pretrained model on a different ensemble size, refer to the script: `scripts/run_fine_tuning.sh`.
 
-For example, if you want to fine-tune a model on the Lorenz 96 system with an observation noise σ<sub>y</sub>=1, based on a pretrained checkpoint, you can use the following command:
+## Lorenz '96 Model Results from Our Paper
 
-```bash
-python finetune.py --epochs 20 --save_epoch 20 --dataset lorenz96 --sigma_y 1 --learning_rate 1e-4 --cp_load_path PATH_TO_YOUR_CHECKPOINT
-```
+Here are the three main figures from our paper concerning the Lorenz '96 model experiments. These figures include their original captions.
 
-## Project Structure
+![Lorenz '96 Results - Figure 1](sample_figures/L96_figure_1.svg)
 
-The main scripts for training, fine-tuning, and evaluation are:
+![Lorenz '96 Results - Figure 2](sample_figures/L96_figure_2.svg)
 
-- `train.py`: used for training models from scratch.
-- `finetune.py`: used for fine-tuning pre-trained models.
-- `evaluate.py`: used for evaluating trained models.
-
-Utility functions are mainly located in `utils.py`. This file includes:
-
-- Definitions for different dynamical systems,
-- Data generation and preprocessing routines,
-- Optimizer setup and other helper functions.
-
-Core training-related functions are implemented in `training_utils.py`, including:
-
-- Functions for training and testing models,
-- Model setup routines.
-
-The file `loss.py` defines various loss functions used in the training process.
-
-Different neural network architectures are defined in `networks.py`.
-
-Training configurations are organized in `config/cli`, where all training parameters are specified.
-
-Model-specific configurations for the three dynamical systems — Lorenz63, Lorenz96, and Kuramoto–Sivashinsky (KS) — are provided in `config/dataset_info`.
-
-### Remark: Data Generation
-
-The function `gen_data` in `utils.py` is used to generate trajectories for different dynamical systems. 
-
-Note that generating data for the first time can be time-consuming, especially for complex systems. However, once the data is generated, it will be automatically saved in the `data` directory. 
-
-If the same parameters are used in future runs, the data will be loaded directly from the saved files, avoiding redundant computation.
+![Lorenz '96 Results - Figure 3](sample_figures/L96_figure_3.svg)

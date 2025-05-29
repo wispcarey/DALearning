@@ -19,7 +19,7 @@ if __name__ == "__main__":
     folder_name = os.path.dirname(args.cp_load_path)
     
     # redirect output
-    with redirect_output(folder_name, filename="test_output.txt"):
+    with redirect_output(folder_name, filename="test_output.txt", enable_redirect=args.redirect_output):
         if args.seed is not None and args.seed != "None":
             torch.manual_seed(int(args.seed))
 
@@ -56,12 +56,11 @@ if __name__ == "__main__":
         # test
         print("Test NN Results")
         loss_list_nn = []
-        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, mean_crps_nn, std_crps_nn, no_nan_percent_nn, loc_tensor = \
+        mean_rmse_nn, std_rmse_nn, mean_rmv_nn, std_rmv_nn, mean_rrmse_nn, std_rrmse_nn, no_nan_percent_nn, loc_tensor = \
             test_model(test_loader, model_list, args, H_info=H_info, plot_figures=True, fig_name=f'{folder_name}/test_{args.N}', save_pdf=True)
         print(f"RMSE: {mean_rmse_nn:.3f} ± {std_rmse_nn:.3f}")
         print(f"RRMSE: {mean_rrmse_nn:.3f} ± {std_rrmse_nn:.3f}")
         print(f"RMV: {mean_rmv_nn:.3f} ± {std_rmv_nn:.3f}")
-        print(f"CRPS: {mean_crps_nn:.3f} ± {std_crps_nn:.3f}")
         print(f'No NAN Percentage: {no_nan_percent_nn * 100: .2f}%')
         
         if args.no_localization:
@@ -87,8 +86,6 @@ if __name__ == "__main__":
                 'std_rrmse':std_rrmse_nn,
                 'mean_rmv':mean_rmv_nn,
                 'std_rmv':std_rmv_nn,
-                'mean_crps':mean_crps_nn,
-                'std_crps':std_crps_nn,
                 'valid_percent':no_nan_percent_nn,
                 'loc_mean':loc_mean,
                 'loc_std':loc_std,

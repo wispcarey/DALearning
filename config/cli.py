@@ -80,12 +80,7 @@ def get_parameters():
     parser.add_argument('--loss_warm_up', action='store_true',
                         help='warm-up the loss according to epochs')
     parser.add_argument('--loss_type', type=parse_list_type, default=["nl2"], 
-                        help='the type of loss function, split by comma, e.g., "l2,rmse,crps"')
-    parser.add_argument('--es_p', type=float, default=1,
-                        help='the power of energy score')
-    parser.add_argument('--kes_sigma', type=lambda x: float(x) if x.lower() != 'none' else None,
-                    default=1e-2,
-                    help='the power of energy score (can be float or None)')
+                        help='the type of loss function, split by comma, e.g., "nl2,rmse"')
 
     # training setting
     parser.add_argument('--cp_load_path', type=str, default="no",
@@ -165,9 +160,10 @@ def get_parameters():
     parser.add_argument('--test_only', action='store_true', help='Only do the test part')
     parser.add_argument('--test_rounds', type=int, default=1, help='Number of test rounds when selecting --test_only')
     parser.add_argument('--GPU_memory', type=int, default=16, help='GPU memory in GB')
+    parser.add_argument('--redirect_output', action='store_true', help='Redirect the output to a txt file')
     
     # version setting
-    parser.add_argument('--v', type=str, choices=['CorrTerms','EtE','EnKF','ESRF','LETKF'],
+    parser.add_argument('--v', type=str, choices=['CorrTerms','EnKF','ESRF','LETKF'],
                         default='CorrTerms', help='versions')
 
     args = parser.parse_args()
